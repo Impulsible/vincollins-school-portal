@@ -1,60 +1,32 @@
+// src/lib/constants/navigation.ts
 export const mainNavItems = [
-  {
-    title: 'Home',
-    href: '/',
-  },
-  {
-    title: 'About Us',
-    href: '/about',
-    children: [
-      { title: 'Our Vision', href: '/about/vision' },
-      { title: 'Our Mission', href: '/about/mission' },
-      { title: 'Core Values', href: '/about/values' },
-    ],
-  },
-  {
-    title: 'Academics',
-    href: '/academics',
-    children: [
-      { title: 'Creche/Playgroup', href: '/academics/creche' },
-      { title: 'Nursery', href: '/academics/nursery' },
-      { title: 'Primary', href: '/academics/primary' },
-      { title: 'College', href: '/academics/college' },
-    ],
-  },
-  {
-    title: 'Portal',
-    href: '/login',
-  },
-  {
-    title: 'Contact',
-    href: '/contact',
-  },
+  { title: 'Home', href: '/' },
+  { title: 'About', href: '/about' },
+  { title: 'Schools', href: '/schools' },
+  { title: 'Academics', href: '/academics' },
+  { title: 'Admissions', href: '/admissions' },
+  { title: 'News', href: '/news' },
+  { title: 'Contact', href: '/contact' },
+  // Make sure there's NO '/login' here
 ]
 
 export const footerNavItems = {
   academics: [
-    { title: 'Creche/Playgroup', href: '/academics/creche' },
-    { title: 'Nursery', href: '/academics/nursery' },
-    { title: 'Primary', href: '/academics/primary' },
-    { title: 'College', href: '/academics/college' },
+    { title: 'Curriculum', href: '/academics/curriculum' },
+    { title: 'Calendar', href: '/academics/calendar' },
+    { title: 'Results', href: '/academics/results' },
+    { title: 'Library', href: '/academics/library' },
   ],
   about: [
-    { title: 'Our Vision', href: '/about/vision' },
-    { title: 'Our Mission', href: '/about/mission' },
-    { title: 'Core Values', href: '/about/values' },
-    { title: 'History', href: '/about/history' },
-  ],
-  resources: [
-    { title: 'News & Events', href: '/news' },
-    { title: 'Gallery', href: '/gallery' },
-    { title: 'FAQs', href: '/faqs' },
-    { title: 'Contact Us', href: '/contact' },
+    { title: 'Our Story', href: '/about/story' },
+    { title: 'Mission & Vision', href: '/about/mission' },
+    { title: 'Leadership', href: '/about/leadership' },
+    { title: 'Facilities', href: '/about/facilities' },
   ],
   portal: [
-    { title: 'Student Login', href: '/login' },
-    { title: 'Staff Login', href: '/login' },
-    { title: 'Admin Login', href: '/login' },
-    { title: 'Parent Portal', href: '/parent' },
+    { title: 'Student Portal', href: '/portal/student' },
+    { title: 'Parent Portal', href: '/portal/parent' },
+    { title: 'Staff Portal', href: '/portal/staff' },
+    // Make sure there's NO '/login' here either
   ],
 }
