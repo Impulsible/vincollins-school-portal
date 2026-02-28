@@ -1,82 +1,127 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ChevronLeft, ChevronRight, Clock, MapPin, User } from 'lucide-react'
-import { useTimetable } from '@/hooks/use-timetable'
-import { DAYS_OF_WEEK, TIME_SLOTS } from '@/types/timetable'
+import { ChevronLeft, ChevronRight, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 
-interface WeeklyViewProps {
-  classId?: string
-  teacherId?: string
-  isEditable?: boolean
-  onEntryClick?: (entry: any) => void
+interface TimetableEntry {
+  id: string
+  subject: string
+  teacher: string
+  room: string
+  startTime: string
+  endTime: string
+  dayOfWeek: number
+  class: string
 }
 
-export function WeeklyView({ classId, teacherId, isEditable, onEntryClick }: WeeklyViewProps) {
-  const [selectedTerm, setSelectedTerm] = useState('2024 First Term')
-  [timetableData, setTimetableData] = useState<any>({})
-  const [currentWeek, setCurrentWeek] = useState(new Date())
-  const { getClassTimetable, getTeacherTimetable, organizeTimetableByDay, isLoading } = useTimetable()
+interface OrganizedTimetable {
+  [day: string]: TimetableEntry[]
+}
 
-  const terms = ['2024 First Term', '2024 Second Term', '2024 Third Term']
+const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const timeSlots = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00']
+
+export function WeeklyView() {
+  const [selectedClass, setSelectedClass] = useState<string>('')
+  const [selectedTerm, setSelectedTerm] = useState('2024 First Term')
+  const [timetableData, setTimetableData] = useState<OrganizedTimetable>({})
+  const [loading, setLoading] = useState(true)
+  const [currentWeek, setCurrentWeek] = useState(new Date())
 
   useEffect(() => {
-    fetchTimetable()
-  }, [classId, teacherId, selectedTerm])
-
-  const fetchTimetable = async () => {
-    let data
-    if (classId) {
-      data = await getClassTimetable(classId, selectedTerm)
-    } else if (teacherId) {
-      data = await getTeacherTimetable(teacherId, selectedTerm)
+    // Mock data - replace with actual API call
+    const mockData: OrganizedTimetable = {
+      Monday: [
+        {
+          id: '1',
+          subject: 'Mathematics',
+          teacher: 'Mr. Smith',
+          room: 'Room 101',
+          startTime: '08:00',
+          endTime: '09:00',
+          dayOfWeek: 1,
+          class: 'SS1',
+        },
+        {
+          id: '2',
+          subject: 'English',
+          teacher: 'Mrs. Johnson',
+          room: 'Room 102',
+          startTime: '09:00',
+          endTime: '10:00',
+          dayOfWeek: 1,
+          class: 'SS1',
+        },
+      ],
+      Tuesday: [
+        {
+          id: '3',
+          subject: 'Physics',
+          teacher: 'Dr. Williams',
+          room: 'Lab 1',
+          startTime: '08:00',
+          endTime: '09:00',
+          dayOfWeek: 2,
+          class: 'SS1',
+        },
+        {
+          id: '4',
+          subject: 'Chemistry',
+          teacher: 'Dr. Brown',
+          room: 'Lab 2',
+          startTime: '10:00',
+          endTime: '11:00',
+          dayOfWeek: 2,
+          class: 'SS1',
+        },
+      ],
+      Wednesday: [],
+      Thursday: [],
+      Friday: [],
+      Saturday: [],
     }
 
-    if (data) {
-      const organized = organizeTimetableByDay(data)
-      setTimetableData(organized)
-    }
+    setTimetableData(mockData)
+    setLoading(false)
+  }, [])
+
+  const navigateWeek = (direction: 'prev' | 'next') => {
+    const newDate = new Date(currentWeek)
+    newDate.setDate(currentWeek.getDate() + (direction === 'next' ? 7 : -7))
+    setCurrentWeek(newDate)
   }
 
-  const getCurrentWeekDates = () => {
+  const formatWeekRange = () => {
     const start = new Date(currentWeek)
-    start.setDate(start.getDate() - start.getDay()) // Start from Sunday
-    const dates = []
+    const end = new Date(currentWeek)
+    end.setDate(start.getDate() + 6)
     
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(start)
-      date.setDate(start.getDate() + i)
-      dates.push(date)
-    }
-    
-    return dates
+    return `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`
   }
 
-  const weekDates = getCurrentWeekDates()
-
-  const getSubjectColor = (subjectCode: string) => {
-    const colors = {
-      MATH: 'bg-portal-blue/10 border-portal-blue',
-      ENGL: 'bg-secondary/10 border-secondary',
-      SCI: 'bg-success/10 border-success',
-      SOS: 'bg-accent/10 border-accent',
-      default: 'bg-primary/10 border-primary',
-    }
-    return colors[subjectCode as keyof typeof colors] || colors.default
-  }
-
-  const formatTime = (time: string) => {
-    return new Date(`2000-01-01T${time}`).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[400px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
+      </div>
+    )
   }
 
   return (
@@ -86,115 +131,95 @@ export function WeeklyView({ classId, teacherId, isEditable, onEntryClick }: Wee
           <div>
             <CardTitle>Weekly Timetable</CardTitle>
             <CardDescription>
-              {classId ? 'Class schedule' : teacherId ? 'Teacher schedule' : 'Timetable'}
+              View and manage class schedules
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Select value={selectedTerm} onValueChange={setSelectedTerm}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Select term" />
-              </SelectTrigger>
-              <SelectContent>
-                {terms.map((term) => (
-                  <SelectItem key={term} value={term}>
-                    {term}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  const newDate = new Date(currentWeek)
-                  newDate.setDate(currentWeek.getDate() - 7)
-                  setCurrentWeek(newDate)
-                }}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  const newDate = new Date(currentWeek)
-                  newDate.setDate(currentWeek.getDate() + 7)
-                  setCurrentWeek(newDate)
-                }}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+            <Button variant="outline" size="icon" onClick={() => navigateWeek('prev')}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm font-medium min-w-[200px] text-center">
+              {formatWeekRange()}
+            </span>
+            <Button variant="outline" size="icon" onClick={() => navigateWeek('next')}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="grid">
-          <TabsList className="mb-4">
-            <TabsTrigger value="grid">Grid View</TabsTrigger>
-            <TabsTrigger value="list">List View</TabsTrigger>
+        <div className="mb-4 flex items-center gap-4">
+          <Select value={selectedClass} onValueChange={setSelectedClass}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Select class" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="SS1">SS1</SelectItem>
+              <SelectItem value="SS2">SS2</SelectItem>
+              <SelectItem value="SS3">SS3</SelectItem>
+              <SelectItem value="JSS1">JSS1</SelectItem>
+              <SelectItem value="JSS2">JSS2</SelectItem>
+              <SelectItem value="JSS3">JSS3</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={selectedTerm} onValueChange={setSelectedTerm}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Select term" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="2024 First Term">2024 First Term</SelectItem>
+              <SelectItem value="2024 Second Term">2024 Second Term</SelectItem>
+              <SelectItem value="2024 Third Term">2024 Third Term</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <Tabs defaultValue="weekly" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="weekly">Weekly View</TabsTrigger>
+            <TabsTrigger value="daily">Daily View</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="grid">
-            <div className="overflow-x-auto">
-              <div className="min-w-[800px]">
-                {/* Header */}
-                <div className="grid grid-cols-8 gap-2 mb-2">
-                  <div className="text-sm font-medium text-muted-foreground">Time</div>
-                  {weekDates.map((date, index) => (
-                    <div key={index} className="text-center">
-                      <div className="text-sm font-medium">{DAYS_OF_WEEK[date.getDay()]}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+          <TabsContent value="weekly">
+            <div className="border rounded-lg overflow-hidden">
+              {/* Header */}
+              <div className="grid grid-cols-7 bg-muted">
+                {daysOfWeek.map((day) => (
+                  <div key={day} className="p-3 text-center font-medium border-r last:border-r-0">
+                    {day}
+                  </div>
+                ))}
+              </div>
 
-                {/* Time slots */}
-                {TIME_SLOTS.map((time, slotIndex) => (
-                  <div key={time} className="grid grid-cols-8 gap-2 mb-2">
-                    <div className="text-sm text-muted-foreground flex items-center">
-                      <Clock className="h-3 w-3 mr-1" />
-                      {formatTime(time)}
-                    </div>
-                    
-                    {[0,1,2,3,4,5,6].map((day) => {
-                      const entries = timetableData[day]?.filter((e: any) => 
-                        e.start_time <= time && e.end_time > time
+              {/* Time slots */}
+              <div className="divide-y">
+                {timeSlots.map((time, index) => (
+                  <div key={time} className="grid grid-cols-7 min-h-[80px]">
+                    {daysOfWeek.map((day) => {
+                      const entries = timetableData[day]?.filter(
+                        e => e.startTime === time
                       ) || []
-
+                      
                       return (
                         <div
                           key={`${day}-${time}`}
                           className={cn(
-                            "min-h-[80px] rounded-lg border p-2",
-                            entries.length > 0 ? 'cursor-pointer hover:shadow-md transition-shadow' : 'bg-muted/50',
-                            entries.length > 0 && getSubjectColor(entries[0]?.subject?.code)
+                            'p-2 border-r last:border-r-0',
+                            index % 2 === 0 ? 'bg-background' : 'bg-muted/30'
                           )}
-                          onClick={() => entries.length > 0 && onEntryClick?.(entries[0])}
                         >
-                          {entries.map((entry: any) => (
-                            <div key={entry.id} className="space-y-1">
-                              <div className="font-medium text-sm">
-                                {entry.subject?.name}
+                          {entries.map((entry) => (
+                            <div
+                              key={entry.id}
+                              className="bg-primary/10 p-2 rounded text-xs space-y-1"
+                            >
+                              <p className="font-medium">{entry.subject}</p>
+                              <p className="text-muted-foreground">{entry.teacher}</p>
+                              <div className="flex items-center gap-1 text-muted-foreground">
+                                <Clock className="h-3 w-3" />
+                                <span>{entry.room}</span>
                               </div>
-                              <div className="flex items-center text-xs text-muted-foreground">
-                                <User className="h-3 w-3 mr-1" />
-                                {entry.teacher?.user?.first_name} {entry.teacher?.user?.last_name}
-                              </div>
-                              {entry.room && (
-                                <div className="flex items-center text-xs text-muted-foreground">
-                                  <MapPin className="h-3 w-3 mr-1" />
-                                  {entry.room}
-                                </div>
-                              )}
-                              {isEditable && (
-                                <Badge variant="outline" className="text-xs">
-                                  {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
-                                </Badge>
-                              )}
                             </div>
                           ))}
                         </div>
@@ -206,47 +231,27 @@ export function WeeklyView({ classId, teacherId, isEditable, onEntryClick }: Wee
             </div>
           </TabsContent>
 
-          <TabsContent value="list">
+          <TabsContent value="daily">
             <div className="space-y-4">
-              {[0,1,2,3,4,5,6].map((day) => {
+              {daysOfWeek.map((day) => {
                 const dayEntries = timetableData[day] || []
+                
                 if (dayEntries.length === 0) return null
 
                 return (
-                  <div key={day} className="border rounded-lg p-4">
-                    <h3 className="font-medium mb-3">{DAYS_OF_WEEK[day]}</h3>
-                    <div className="space-y-2">
-                      {dayEntries.map((entry: any) => (
-                        <div
-                          key={entry.id}
-                          className={cn(
-                            "p-3 rounded-lg border cursor-pointer hover:shadow-md transition-shadow",
-                            getSubjectColor(entry.subject?.code)
-                          )}
-                          onClick={() => onEntryClick?.(entry)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-medium">{entry.subject?.name}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
-                              </div>
-                            </div>
-                            <Badge variant="outline">
-                              {entry.subject?.code}
-                            </Badge>
+                  <div key={day} className="border rounded-lg overflow-hidden">
+                    <div className="bg-muted p-3 font-medium">{day}</div>
+                    <div className="divide-y">
+                      {dayEntries.map((entry) => (
+                        <div key={entry.id} className="p-4 flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{entry.subject}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {entry.teacher} • {entry.room}
+                            </p>
                           </div>
-                          <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
-                            <span className="flex items-center">
-                              <User className="h-3 w-3 mr-1" />
-                              {entry.teacher?.user?.first_name} {entry.teacher?.user?.last_name}
-                            </span>
-                            {entry.room && (
-                              <span className="flex items-center">
-                                <MapPin className="h-3 w-3 mr-1" />
-                                {entry.room}
-                              </span>
-                            )}
+                          <div className="text-sm">
+                            {entry.startTime} - {entry.endTime}
                           </div>
                         </div>
                       ))}

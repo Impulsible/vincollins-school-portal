@@ -1,218 +1,192 @@
-'use client'
-
-import { useState, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useToast } from './use-toast'
-import { type Resource, type ResourceWithDetails } from '@/types/resource'
+import { useToast } from '@/hooks/use-toast'
+
+interface Resource {
+  id: string
+  title: string
+  description: string
+  type: 'document' | 'video' | 'link' | 'image'
+  url: string
+  class_id: string
+  subject_id: string
+  uploaded_by: string
+  status: 'published' | 'draft' | 'archived'
+  created_at: string
+  updated_at: string
+}
+
+interface ResourceFilters {
+  classId?: string
+  subjectId?: string
+  type?: string
+  status?: string
+}
 
 export function useResources() {
-  const [isLoading, setIsLoading] = useState(false)
-  const [resources, setResources] = useState<ResourceWithDetails[]>([])
-  const { success, error } = useToast()
+  const [resources, setResources] = useState<Resource[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const { success, error: toastError } = useToast()
+  const supabase = createClient()
 
-  const uploadResource = useCallback(async (
-    resourceData: Omit<Resource, 'id' | 'created_at' | 'updated_at'>
-  ) => {
-    setIsLoading(true)
+  const fetchResources = async (filters?: ResourceFilters) => {
+    setLoading(true)
+    setError(null)
+
     try {
-      const supabase = createClient()
-      
-      const { data, error: insertError } = await supabase
-        .from('resources')
-        .insert(resourceData)
-        .select()
-        .single()
-
-      if (insertError) throw insertError
-
-      success('Resource uploaded successfully')
-      return data
-    } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to upload resource')
-      return null
-    } finally {
-      setIsLoading(false)
-    }
-  }, [success, error])
-
-  const uploadFile = useCallback(async (file: File, path: string) => {
-    try {
-      const supabase = createClient()
-      
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`
-      const filePath = `${path}/${fileName}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('resources')
-        .upload(filePath, file)
-
-      if (uploadError) throw uploadError
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('resources')
-        .getPublicUrl(filePath)
-
-      return publicUrl
-    } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to upload file')
-      return null
-    }
-  }, [error])
-
-  const getClassResources = useCallback(async (
-    classId?: string,
-    subjectId?: string
-  ) => {
-    setIsLoading(true)
-    try {
-      const supabase = createClient()
-      
       let query = supabase
-        .from('resources')
-        .select(`
-          *,
-          class:classes(name, code),
-          subject:subjects(name, code),
-          uploader:users(first_name, last_name)
-        `)
-        .eq('status', 'published')
-        .order('created_at', { ascending: false })
-
-      if (classId) {
-        query = query.eq('class_id', classId)
-      }
-
-      if (subjectId) {
-        query = query.eq('subject_id', subjectId)
-      }
-
-      const { data, error: fetchError } = await query
-
-      if (fetchError) throw fetchError
-
-      setResources(data || [])
-      return data
-    } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to fetch resources')
-      return null
-    } finally {
-      setIsLoading(false)
-    }
-  }, [error])
-
-  const deleteResource = useCallback(async (resourceId: string) => {
-    setIsLoading(true)
-    try {
-      const supabase = createClient()
-      
-      // Get file URL first to delete from storage
-      const { data: resource } = await supabase
-        .from('resources')
-        .select('file_url')
-        .eq('id', resourceId)
-        .single()
-
-      if (resource?.file_url) {
-        // Extract path from URL
-        const path = resource.file_url.split('/').pop()
-        if (path) {
-          await supabase.storage.from('resources').remove([path])
-        }
-      }
-
-      const { error: deleteError } = await supabase
-        .from('resources')
-        .delete()
-        .eq('id', resourceId)
-
-      if (deleteError) throw deleteError
-
-      success('Resource deleted')
-      return true
-    } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to delete resource')
-      return false
-    } finally {
-      setIsLoading(false)
-    }
-  }, [success, error])
-
-  const updateResource = useCallback(async (
-    resourceId: string,
-    updates: Partial<Resource>
-  ) => {
-    setIsLoading(true)
-    try {
-      const supabase = createClient()
-      
-      const { data, error: updateError } = await supabase
-        .from('resources')
-        .update(updates)
-        .eq('id', resourceId)
-        .select()
-        .single()
-
-      if (updateError) throw updateError
-
-      success('Resource updated')
-      return data
-    } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to update resource')
-      return null
-    } finally {
-      setIsLoading(false)
-    }
-  }, [success, error])
-
-  const publishResource = useCallback(async (resourceId: string) => {
-    return updateResource(resourceId, { status: 'published' })
-  }, [updateResource])
-
-  const unpublishResource = useCallback(async (resourceId: string) => {
-    return updateResource(resourceId, { status: 'draft' })
-  }, [updateResource])
-
-  const getResourceStats = useCallback(async () => {
-    try {
-      const supabase = createClient()
-      
-      const { data: total } = await supabase
-        .from('resources')
-        .select('*', { count: 'exact', head: true })
-
-      const { data: byType } = await supabase
-        .from('resources')
-        .select('type, count')
-        .group('type')
-
-      const { data: recent } = await supabase
         .from('resources')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(5)
 
-      return {
-        total: total?.length || 0,
-        byType: byType || [],
-        recent: recent || [],
+      if (filters?.classId) {
+        query = query.eq('class_id', filters.classId)
       }
+
+      if (filters?.subjectId) {
+        query = query.eq('subject_id', filters.subjectId)
+      }
+
+      if (filters?.type) {
+        query = query.eq('type', filters.type)
+      }
+
+      if (filters?.status) {
+        query = query.eq('status', filters.status)
+      }
+
+      const { data, error } = await query
+
+      if (error) throw error
+
+      setResources(data || [])
     } catch (err) {
-      console.error('Failed to get stats:', err)
+      console.error('Error fetching resources:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch resources')
+      toastError?.('Failed to load resources')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getResource = async (id: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('resources')
+        .select('*')
+        .eq('id', id)
+        .single()
+
+      if (error) throw error
+
+      return data
+    } catch (err) {
+      console.error('Error fetching resource:', err)
+      toastError?.('Failed to load resource')
       return null
     }
+  }
+
+  const createResource = async (resource: Omit<Resource, 'id' | 'created_at' | 'updated_at'>) => {
+    try {
+      const { data, error } = await supabase
+        .from('resources')
+        .insert([resource])
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setResources(prev => [data, ...prev])
+      success?.('Resource created successfully')
+      return data
+    } catch (err) {
+      console.error('Error creating resource:', err)
+      toastError?.('Failed to create resource')
+      return null
+    }
+  }
+
+  const updateResource = async (id: string, updates: Partial<Resource>) => {
+    try {
+      const { data, error } = await supabase
+        .from('resources')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setResources(prev => prev.map(r => r.id === id ? data : r))
+      success?.('Resource updated successfully')
+      return data
+    } catch (err) {
+      console.error('Error updating resource:', err)
+      toastError?.('Failed to update resource')
+      return null
+    }
+  }
+
+  const deleteResource = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('resources')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+
+      setResources(prev => prev.filter(r => r.id !== id))
+      success?.('Resource deleted successfully')
+      return true
+    } catch (err) {
+      console.error('Error deleting resource:', err)
+      toastError?.('Failed to delete resource')
+      return false
+    }
+  }
+
+  // Get resource statistics by type
+  const getResourceStats = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('resources')
+        .select('type')
+
+      if (error) throw error
+
+      // Manually aggregate by type
+      const stats: Record<string, number> = {}
+      data?.forEach((item: any) => {
+        const type = item.type || 'other'
+        stats[type] = (stats[type] || 0) + 1
+      })
+
+      return Object.entries(stats).map(([type, count]) => ({
+        type,
+        count,
+      }))
+    } catch (err) {
+      console.error('Error getting resource stats:', err)
+      return []
+    }
+  }
+
+  useEffect(() => {
+    fetchResources()
   }, [])
 
   return {
-    isLoading,
     resources,
-    uploadResource,
-    uploadFile,
-    getClassResources,
-    deleteResource,
+    loading,
+    error,
+    fetchResources,
+    getResource,
+    createResource,
     updateResource,
-    publishResource,
-    unpublishResource,
+    deleteResource,
     getResourceStats,
   }
 }

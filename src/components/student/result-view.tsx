@@ -1,135 +1,237 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
+import { useRouter } from 'next/navigation'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Download, Printer, TrendingUp, Award, BookOpen } from 'lucide-react'
-import { useResults } from '@/hooks/use-results'
+import { Badge } from '@/components/ui/badge'
+import { Download, Eye } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { createClient } from '@/lib/supabase/client'
-import { 
-  LineChart, 
-  Line, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell 
-} from 'recharts'
+import { formatDate } from '@/lib/utils/format'
 
-interface ResultViewProps {
-  studentId?: string // Optional for admin/staff viewing
+interface Result {
+  id: string
+  student_id: string
+  subject_id: string
+  class_id: string
+  term: string
+  academic_year: string
+  assessment_type: string
+  score: number
+  grade: string
+  remarks: string
+  status: string
+  created_at: string
+  subject?: {
+    id: string
+    name: string
+    code: string
+  }
 }
 
-export function ResultView({ studentId }: ResultViewProps) {
-  const [selectedTerm, setSelectedTerm] = useState<string>('')
-  [terms, setTerms] = useState<string[]>([])
-  const [resultSummary, setResultSummary] = useState<any>(null)
-  const [chartData, setChartData] = useState<any[]>([])
-  const { getStudentResults, generateResultSummary, calculateStudentGPA } = useResults()
-  const { profile } = useAuth()
+interface ResultSummary {
+  studentName: string
+  className: string
+  term: string
+  academicYear: string
+  gpa: number
+  totalScore: number
+  totalSubjects: number
+  results: Result[]
+}
 
-  const currentStudentId = studentId || profile?.student?.id
+export function ResultView() {
+  const router = useRouter()
+  const { user } = useAuth()
+  const [loading, setLoading] = useState(true)
+  const [results, setResults] = useState<Result[]>([])
+  const [summary, setSummary] = useState<ResultSummary | null>(null)
+  const [selectedTerm, setSelectedTerm] = useState<string>('')
+  const [availableTerms, setAvailableTerms] = useState<string[]>([])
+  const [studentId, setStudentId] = useState<string>('')
+
+  const supabase = createClient()
 
   useEffect(() => {
-    if (currentStudentId) {
-      fetchTerms()
-      if (selectedTerm) {
-        fetchResults()
+    const fetchStudentData = async () => {
+      if (!user?.id) return
+
+      try {
+        // Get student profile
+        const { data: student, error: studentError } = await supabase
+          .from('students')
+          .select('id')
+          .eq('user_id', user.id)
+          .single()
+
+        if (studentError) throw studentError
+
+        setStudentId(student.id)
+
+        // Fetch results
+        const { data: resultsData, error: resultsError } = await supabase
+          .from('results')
+          .select(`
+            *,
+            subject:subjects!inner (
+              id,
+              name,
+              code
+            )
+          `)
+          .eq('student_id', student.id)
+          .order('created_at', { ascending: false })
+
+        if (resultsError) throw resultsError
+
+        setResults(resultsData || [])
+
+        // Extract unique terms
+        const terms = [...new Set(resultsData?.map(r => `${r.term} ${r.academic_year}`) || [])]
+        setAvailableTerms(terms)
+        
+        if (terms.length > 0) {
+          setSelectedTerm(terms[0])
+        }
+
+      } catch (error) {
+        console.error('Error fetching results:', error)
+      } finally {
+        setLoading(false)
       }
     }
-  }, [currentStudentId, selectedTerm])
 
-  const fetchTerms = async () => {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('results')
-      .select('academic_term')
-      .eq('student_id', currentStudentId)
-      .eq('status', 'published')
-      .order('academic_term', { ascending: false })
+    fetchStudentData()
+  }, [user, supabase])
 
-    if (data) {
-      const uniqueTerms = [...new Set(data.map(r => r.academic_term))]
-      setTerms(uniqueTerms)
-      if (uniqueTerms.length > 0 && !selectedTerm) {
-        setSelectedTerm(uniqueTerms[0])
+  useEffect(() => {
+    const generateSummary = async () => {
+      if (!selectedTerm || !studentId) return
+
+      try {
+        // Filter results by term
+        const [term, academicYear] = selectedTerm.split(' ')
+        const termResults = results.filter(
+          r => r.term === term && r.academic_year === academicYear
+        )
+
+        // Get student and class info
+        const { data: student, error: studentError } = await supabase
+          .from('students')
+          .select(`
+            first_name,
+            last_name,
+            class:classes (
+              name
+            )
+          `)
+          .eq('id', studentId)
+          .single()
+
+        if (studentError) throw studentError
+
+        // FIXED: Handle case where class might be an array
+        let className = 'N/A'
+        if (student.class) {
+          // Check if class is an array
+          if (Array.isArray(student.class) && student.class.length > 0) {
+            className = student.class[0]?.name || 'N/A'
+          } 
+          // Check if class is an object
+          else if (typeof student.class === 'object' && student.class !== null) {
+            className = (student.class as any).name || 'N/A'
+          }
+        }
+
+        // Calculate summary
+        const totalScore = termResults.reduce((sum, r) => sum + r.score, 0)
+        const totalSubjects = termResults.length
+        const averageScore = totalSubjects > 0 ? totalScore / totalSubjects : 0
+        const gpa = (averageScore / 100) * 4 // Convert percentage to 4.0 scale
+
+        setSummary({
+          studentName: `${student.first_name} ${student.last_name}`,
+          className,
+          term,
+          academicYear,
+          gpa: parseFloat(gpa.toFixed(2)),
+          totalScore,
+          totalSubjects,
+          results: termResults,
+        })
+
+      } catch (error) {
+        console.error('Error generating summary:', error)
       }
     }
-  }
 
-  const fetchResults = async () => {
-    const summary = await generateResultSummary(currentStudentId, selectedTerm)
-    setResultSummary(summary)
-
-    if (summary) {
-      // Prepare chart data
-      const chart = summary.subjects.map((s: any) => ({
-        subject: s.subject_code,
-        CA: s.ca_score,
-        Exam: s.exam_score,
-        Total: s.total_score,
-      }))
-      setChartData(chart)
-    }
-  }
+    generateSummary()
+  }, [selectedTerm, studentId, results, supabase])
 
   const getGradeColor = (grade: string) => {
-    switch(grade) {
-      case 'A': return 'bg-success'
-      case 'B': return 'bg-portal-blue'
-      case 'C': return 'bg-accent'
-      case 'D': return 'bg-warning'
-      case 'E': return 'bg-orange-500'
-      default: return 'bg-portal-red'
+    switch (grade) {
+      case 'A': return 'success'
+      case 'B': return 'info'
+      case 'C': return 'warning'
+      case 'D': return 'warning'
+      case 'E': return 'destructive'
+      case 'F': return 'destructive'
+      default: return 'default'
     }
   }
 
-  const COLORS = ['#10B981', '#2D6CDF', '#87A96B', '#F59E0B', '#EF4444', '#8B7355']
-
-  if (!resultSummary) {
+  if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>No Results Available</CardTitle>
-          <CardDescription>
-            No published results found for this student.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <div className="flex items-center justify-center h-[400px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
+      </div>
     )
   }
 
   return (
     <div className="space-y-6">
-      {/* Header with Term Selection */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-2xl font-serif">
-                {resultSummary.student_name}
-              </CardTitle>
-              <CardDescription>
-                Admission: {resultSummary.admission_number} • Class: {resultSummary.class_name}
-              </CardDescription>
-            </div>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-serif font-bold">My Results</h1>
+        {summary && (
+          <Button variant="outline">
+            <Download className="mr-2 h-4 w-4" />
+            Download Report
+          </Button>
+        )}
+      </div>
+
+      {availableTerms.length > 0 ? (
+        <>
+          <div className="flex items-center gap-4">
             <Select value={selectedTerm} onValueChange={setSelectedTerm}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-[250px]">
                 <SelectValue placeholder="Select term" />
               </SelectTrigger>
               <SelectContent>
-                {terms.map((term) => (
+                {availableTerms.map((term) => (
                   <SelectItem key={term} value={term}>
                     {term}
                   </SelectItem>
@@ -137,222 +239,106 @@ export function ResultView({ studentId }: ResultViewProps) {
               </SelectContent>
             </Select>
           </div>
-        </CardHeader>
-      </Card>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">GPA</p>
-                <p className="text-3xl font-bold text-portal-blue">{resultSummary.gpa}</p>
+          {summary && (
+            <>
+              {/* Summary Cards */}
+              <div className="grid gap-4 md:grid-cols-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Student Name</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-xl font-bold">{summary.studentName}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Class</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-xl font-bold">{summary.className}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">GPA</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-xl font-bold">{summary.gpa}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Total Score</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-xl font-bold">{summary.totalScore}</p>
+                  </CardContent>
+                </Card>
               </div>
-              <TrendingUp className="h-8 w-8 text-portal-blue" />
-            </div>
-          </CardContent>
-        </Card>
 
+              {/* Results Table */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Subject Results</CardTitle>
+                  <CardDescription>
+                    {summary.term} Term - {summary.academicYear} Academic Year
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Subject</TableHead>
+                        <TableHead>Code</TableHead>
+                        <TableHead>Score</TableHead>
+                        <TableHead>Grade</TableHead>
+                        <TableHead>Remarks</TableHead>
+                        <TableHead>Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {summary.results.map((result) => (
+                        <TableRow key={result.id}>
+                          <TableCell className="font-medium">
+                            {result.subject?.name}
+                          </TableCell>
+                          <TableCell>{result.subject?.code}</TableCell>
+                          <TableCell>{result.score}</TableCell>
+                          <TableCell>
+                            <Badge variant={getGradeColor(result.grade) as any}>
+                              {result.grade}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{result.remarks || '-'}</TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => router.push(`/student/results/${result.id}`)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </>
+      ) : (
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">CGPA</p>
-                <p className="text-3xl font-bold text-secondary">{resultSummary.cgpa}</p>
-              </div>
-              <Award className="h-8 w-8 text-secondary" />
+          <CardContent className="py-12">
+            <div className="text-center">
+              <p className="text-muted-foreground">No results found.</p>
             </div>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Subjects</p>
-                <p className="text-3xl font-bold text-accent">{resultSummary.subjects.length}</p>
-              </div>
-              <BookOpen className="h-8 w-8 text-accent" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Charts */}
-      <Tabs defaultValue="table" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="table">Result Table</TabsTrigger>
-          <TabsTrigger value="bar">Bar Chart</TabsTrigger>
-          <TabsTrigger value="line">Performance Trend</TabsTrigger>
-          <TabsTrigger value="pie">Grade Distribution</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="table">
-          <Card>
-            <CardContent className="pt-6">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Subject</TableHead>
-                    <TableHead className="text-center">CA (40)</TableHead>
-                    <TableHead className="text-center">Exam (60)</TableHead>
-                    <TableHead className="text-center">Total</TableHead>
-                    <TableHead className="text-center">Grade</TableHead>
-                    <TableHead>Remark</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {resultSummary.subjects.map((subject: any) => (
-                    <TableRow key={subject.subject_id}>
-                      <TableCell className="font-medium">
-                        {subject.subject_name}
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          ({subject.subject_code})
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-center">{subject.ca_score.toFixed(2)}</TableCell>
-                      <TableCell className="text-center">{subject.exam_score.toFixed(2)}</TableCell>
-                      <TableCell className="text-center font-bold">
-                        {subject.total_score.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge className={getGradeColor(subject.grade)}>
-                          {subject.grade}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{subject.remark}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-
-              <div className="mt-6 flex justify-end gap-2">
-                <Button variant="outline">
-                  <Printer className="mr-2 h-4 w-4" />
-                  Print
-                </Button>
-                <Button>
-                  <Download className="mr-2 h-4 w-4" />
-                  Download PDF
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="bar">
-          <Card>
-            <CardContent className="pt-6">
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="subject" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="CA" fill="#87A96B" />
-                  <Bar dataKey="Exam" fill="#2D6CDF" />
-                  <Bar dataKey="Total" fill="#8B7355" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="line">
-          <Card>
-            <CardContent className="pt-6">
-              <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="subject" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="CA" stroke="#87A96B" strokeWidth={2} />
-                  <Line type="monotone" dataKey="Exam" stroke="#2D6CDF" strokeWidth={2} />
-                  <Line type="monotone" dataKey="Total" stroke="#8B7355" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="pie">
-          <Card>
-            <CardContent className="pt-6">
-              <ResponsiveContainer width="100%" height={400}>
-                <PieChart>
-                  <Pie
-                    data={resultSummary.subjects.map((s: any) => ({
-                      name: s.subject_code,
-                      value: s.total_score
-                    }))}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={150}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {resultSummary.subjects.map((_: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {/* Teacher's and Principal's Remarks */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Teacher's Remark</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">
-              {resultSummary.teacher_remark || "No remark provided."}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Principal's Remark</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">
-              {resultSummary.principal_remark || "No remark provided."}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Signature Area */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Class Teacher</p>
-              <div className="mt-4 h-12 w-48 border-b border-dashed" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Principal</p>
-              <div className="mt-4 h-12 w-48 border-b border-dashed" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Date</p>
-              <div className="mt-4 h-12 w-32 border-b border-dashed" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      )}
     </div>
   )
 }

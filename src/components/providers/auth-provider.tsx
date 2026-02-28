@@ -1,12 +1,20 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { createClient } from '@/lib/supabase/client'
-import { User } from '@supabase/supabase-js'
+
+interface User {
+  id: string
+  email?: string | null
+  name?: string | null
+  role?: string
+  firstName?: string
+  lastName?: string
+}
 
 interface AuthContextType {
   user: User | null
-  profile: any | null
   isLoading: boolean
   signOut: () => Promise<void>
 }
@@ -14,66 +22,88 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const { data: session, status } = useSession()
   const [user, setUser] = useState<User | null>(null)
-  const [profile, setProfile] = useState<any | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    const supabase = createClient()
-
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile(session.user.id)
-      } else {
-        setIsLoading(false)
-      }
-    })
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        await fetchProfile(session.user.id)
-      } else {
-        setProfile(null)
-        setIsLoading(false)
-      }
-    })
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [])
-
+  // Define fetchProfile before using it in useEffect
   const fetchProfile = async (userId: string) => {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('users')
-      .select('*, student:students(*), staff:staff(*)')
-      .eq('id', userId)
-      .single()
-    
-    setProfile(data)
-    setIsLoading(false)
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+      
+      if (error) {
+        console.error('Error fetching profile:', error)
+        return
+      }
+      
+      if (data) {
+        setUser(prevUser => {
+          if (!prevUser) return null
+          return {
+            ...prevUser,
+            firstName: data.first_name,
+            lastName: data.last_name,
+            role: data.role,
+          }
+        })
+      }
+    } catch (error) {
+      console.error('Error in fetchProfile:', error)
+    } finally {
+      setIsLoading(false)
+    }
   }
+
+  useEffect(() => {
+    if (status === 'loading') {
+      setIsLoading(true)
+      return
+    }
+
+    if (session?.user) {
+      // Check if user has id (with type assertion since we've extended the types)
+      const sessionUser = session.user as any
+      
+      setUser({
+        id: sessionUser.id || '',
+        email: sessionUser.email,
+        name: sessionUser.name,
+        role: sessionUser.role,
+        firstName: sessionUser.firstName,
+        lastName: sessionUser.lastName,
+      })
+      
+      // Fetch additional profile data if needed
+      if (sessionUser.id) {
+        fetchProfile(sessionUser.id)
+      } else {
+        setIsLoading(false)
+      }
+    } else {
+      setUser(null)
+      setIsLoading(false)
+    }
+  }, [session, status])
 
   const signOut = async () => {
     const supabase = createClient()
     await supabase.auth.signOut()
+    setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, isLoading, signOut }}>
+    <AuthContext.Provider value={{ user, isLoading, signOut }}>
       {children}
     </AuthContext.Provider>
   )
 }
 
-export function useAuth() {
+export const useAuth = () => {
   const context = useContext(AuthContext)
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider')

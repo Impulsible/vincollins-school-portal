@@ -9,13 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -23,67 +18,82 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { format } from 'date-fns'
-import { Search, Download, Filter } from 'lucide-react'
+import { Download, Search, Filter } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { formatDate, formatDateTime } from '@/lib/utils/format'
 
-interface AuditLog {
+type AuditLog = {
   id: string
-  user_id: string | null
+  user_id: string
   action: string
-  entity_type: string
-  entity_id: string | null
-  old_data: any
-  new_data: any
-  ip_address: string | null
-  user_agent: string | null
+  entity: string
+  entity_id: string
+  changes: any
+  ip_address: string
+  user_agent: string
   created_at: string
-  user?: {
+  users?: {
+    email: string
     first_name: string
     last_name: string
-    email: string
   }
 }
+
+type DateRange = 'all' | 'today' | 'week' | 'month'
 
 export function AuditLogViewer() {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
   const [actionFilter, setActionFilter] = useState<string>('all')
   const [entityFilter, setEntityFilter] = useState<string>('all')
-  const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'all'>('week')
+  const [dateRange, setDateRange] = useState<DateRange>('week')
+  const [page, setPage] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+  const pageSize = 50
+
+  const supabase = createClient()
 
   useEffect(() => {
     fetchLogs()
-  }, [actionFilter, entityFilter, dateRange])
+  }, [actionFilter, entityFilter, dateRange, page])
 
   const fetchLogs = async () => {
     setLoading(true)
     try {
-      const supabase = createClient()
-      
       let query = supabase
         .from('audit_logs')
         .select(`
           *,
-          user:users(first_name, last_name, email)
-        `)
+          users!user_id (
+            email,
+            first_name,
+            last_name
+          )
+        `, { count: 'exact' })
         .order('created_at', { ascending: false })
+        .range((page - 1) * pageSize, page * pageSize - 1)
 
-      // Apply date filter
-      const now = new Date()
-      if (dateRange === 'today') {
-        const today = new Date(now.setHours(0, 0, 0, 0)).toISOString()
-        query = query.gte('created_at', today)
-      } else if (dateRange === 'week') {
-        const weekAgo = new Date(now.setDate(now.getDate() - 7)).toISOString()
-        query = query.gte('created_at', weekAgo)
-      } else if (dateRange === 'month') {
-        const monthAgo = new Date(now.setMonth(now.getMonth() - 1)).toISOString()
-        query = query.gte('created_at', monthAgo)
+      // Apply date range filter
+      if (dateRange !== 'all') {
+        const now = new Date()
+        const startDate = new Date()
+        
+        switch (dateRange) {
+          case 'today':
+            startDate.setHours(0, 0, 0, 0)
+            break
+          case 'week':
+            startDate.setDate(now.getDate() - 7)
+            break
+          case 'month':
+            startDate.setMonth(now.getMonth() - 1)
+            break
+        }
+        
+        query = query.gte('created_at', startDate.toISOString())
       }
 
       // Apply action filter
@@ -93,199 +103,240 @@ export function AuditLogViewer() {
 
       // Apply entity filter
       if (entityFilter !== 'all') {
-        query = query.eq('entity_type', entityFilter)
+        query = query.eq('entity', entityFilter)
       }
 
-      const { data, error } = await query.limit(1000)
+      const { data, count, error } = await query
 
       if (error) throw error
+
       setLogs(data || [])
+      setTotalCount(count || 0)
     } catch (error) {
-      console.error('Failed to fetch logs:', error)
+      console.error('Error fetching audit logs:', error)
     } finally {
       setLoading(false)
     }
   }
 
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value)
+  }
+
+  // FIXED: Type-safe handler for date range change
+  const handleDateRangeChange = (value: string) => {
+    setDateRange(value as DateRange)
+  }
+
+  const handleExport = async () => {
+    // Export logic here
+    console.log('Exporting logs...')
+  }
+
   const filteredLogs = logs.filter(log => {
-    if (!search) return true
-    const searchLower = search.toLowerCase()
+    if (!searchTerm) return true
+    
+    const searchLower = searchTerm.toLowerCase()
     return (
-      log.action.toLowerCase().includes(searchLower) ||
-      log.entity_type.toLowerCase().includes(searchLower) ||
-      log.user?.first_name?.toLowerCase().includes(searchLower) ||
-      log.user?.last_name?.toLowerCase().includes(searchLower) ||
-      log.user?.email?.toLowerCase().includes(searchLower)
+      log.action?.toLowerCase().includes(searchLower) ||
+      log.entity?.toLowerCase().includes(searchLower) ||
+      log.users?.email?.toLowerCase().includes(searchLower) ||
+      log.users?.first_name?.toLowerCase().includes(searchLower) ||
+      log.users?.last_name?.toLowerCase().includes(searchLower) ||
+      log.ip_address?.includes(searchLower)
     )
   })
 
-  const getActionColor = (action: string) => {
-    if (action.includes('CREATE')) return 'bg-success'
-    if (action.includes('UPDATE')) return 'bg-warning'
-    if (action.includes('DELETE')) return 'bg-destructive'
-    if (action.includes('LOGIN')) return 'bg-portal-blue'
-    return 'bg-secondary'
+  const getActionBadge = (action: string) => {
+    const variants: Record<string, string> = {
+      CREATE: 'success',
+      UPDATE: 'info',
+      DELETE: 'destructive',
+      LOGIN: 'default',
+      LOGOUT: 'secondary',
+      EXPORT: 'warning',
+    }
+    return variants[action] || 'default'
   }
 
-  const exportLogs = () => {
-    const csv = [
-      ['Timestamp', 'User', 'Action', 'Entity Type', 'Entity ID', 'IP Address'],
-      ...filteredLogs.map(log => [
-        format(new Date(log.created_at), 'yyyy-MM-dd HH:mm:ss'),
-        log.user ? `${log.user.first_name} ${log.user.last_name} (${log.user.email})` : 'System',
-        log.action,
-        log.entity_type,
-        log.entity_id || '-',
-        log.ip_address || '-',
-      ]),
-    ].map(row => row.join(',')).join('\n')
-
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `audit-logs-${format(new Date(), 'yyyy-MM-dd')}.csv`
-    a.click()
-  }
+  const totalPages = Math.ceil(totalCount / pageSize)
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>Audit Logs</CardTitle>
-            <CardDescription>
-              Track all system activities and changes
-            </CardDescription>
-          </div>
-          <Button onClick={exportLogs}>
-            <Download className="mr-2 h-4 w-4" />
-            Export CSV
+          <CardTitle>Audit Logs</CardTitle>
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="h-4 w-4 mr-2" />
+            Export Logs
           </Button>
         </div>
-
-        <div className="flex flex-wrap gap-4 mt-4">
-          <div className="flex-1 min-w-[200px]">
-            <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search logs..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-8"
-              />
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {/* Filters */}
+          <div className="flex flex-wrap gap-4">
+            <div className="flex-1 min-w-[200px]">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search logs..."
+                  value={searchTerm}
+                  onChange={handleSearch}
+                  className="pl-8"
+                />
+              </div>
             </div>
+
+            {/* FIXED: Using custom handler for type safety */}
+            <Select value={actionFilter} onValueChange={setActionFilter}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Action" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Actions</SelectItem>
+                <SelectItem value="CREATE">Create</SelectItem>
+                <SelectItem value="UPDATE">Update</SelectItem>
+                <SelectItem value="DELETE">Delete</SelectItem>
+                <SelectItem value="LOGIN">Login</SelectItem>
+                <SelectItem value="LOGOUT">Logout</SelectItem>
+                <SelectItem value="EXPORT">Export</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={entityFilter} onValueChange={setEntityFilter}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Entity" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Entities</SelectItem>
+                <SelectItem value="user">Users</SelectItem>
+                <SelectItem value="student">Students</SelectItem>
+                <SelectItem value="staff">Staff</SelectItem>
+                <SelectItem value="result">Results</SelectItem>
+                <SelectItem value="assignment">Assignments</SelectItem>
+                <SelectItem value="resource">Resources</SelectItem>
+                <SelectItem value="cbt">CBT Exams</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* FIXED: Using custom handler for date range */}
+            <Select value={dateRange} onValueChange={handleDateRangeChange}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Date Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Time</SelectItem>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="week">Last 7 Days</SelectItem>
+                <SelectItem value="month">Last 30 Days</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          <Select value={actionFilter} onValueChange={setActionFilter}>
-            <SelectTrigger className="w-[150px]">
-              <Filter className="mr-2 h-4 w-4" />
-              <SelectValue placeholder="Action" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Actions</SelectItem>
-              <SelectItem value="CREATE">Create</SelectItem>
-              <SelectItem value="UPDATE">Update</SelectItem>
-              <SelectItem value="DELETE">Delete</SelectItem>
-              <SelectItem value="LOGIN">Login</SelectItem>
-              <SelectItem value="LOGOUT">Logout</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={entityFilter} onValueChange={setEntityFilter}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Entity" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Entities</SelectItem>
-              <SelectItem value="users">Users</SelectItem>
-              <SelectItem value="students">Students</SelectItem>
-              <SelectItem value="staff">Staff</SelectItem>
-              <SelectItem value="results">Results</SelectItem>
-              <SelectItem value="assignments">Assignments</SelectItem>
-              <SelectItem value="cbt_exams">CBT Exams</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={dateRange} onValueChange={setDateRange}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Date Range" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="week">Last 7 Days</SelectItem>
-              <SelectItem value="month">Last 30 Days</SelectItem>
-              <SelectItem value="all">All Time</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </CardHeader>
-
-      <CardContent>
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Timestamp</TableHead>
-                <TableHead>User</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Entity</TableHead>
-                <TableHead>Entity ID</TableHead>
-                <TableHead>IP Address</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
+          {/* Table */}
+          <div className="border rounded-lg">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
-                    Loading logs...
-                  </TableCell>
+                  <TableHead>Timestamp</TableHead>
+                  <TableHead>User</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Entity</TableHead>
+                  <TableHead>Entity ID</TableHead>
+                  <TableHead>IP Address</TableHead>
+                  <TableHead>Changes</TableHead>
                 </TableRow>
-              ) : filteredLogs.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
-                    No logs found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredLogs.map((log) => (
-                  <TableRow key={log.id}>
-                    <TableCell className="font-mono text-xs">
-                      {format(new Date(log.created_at), 'yyyy-MM-dd HH:mm:ss')}
-                    </TableCell>
-                    <TableCell>
-                      {log.user ? (
-                        <div>
-                          <div>{log.user.first_name} {log.user.last_name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {log.user.email}
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">System</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getActionColor(log.action)}>
-                        {log.action}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{log.entity_type}</TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {log.entity_id || '-'}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {log.ip_address || '-'}
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8">
+                      Loading...
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                ) : filteredLogs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8">
+                      No audit logs found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredLogs.map((log) => (
+                    <TableRow key={log.id}>
+                      <TableCell className="font-mono text-xs">
+                        {formatDateTime(log.created_at)}
+                      </TableCell>
+                      <TableCell>
+                        {log.users ? (
+                          <div>
+                            <div className="font-medium">
+                              {log.users.first_name} {log.users.last_name}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {log.users.email}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">System</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={getActionBadge(log.action) as any}>
+                          {log.action}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{log.entity}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {log.entity_id}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {log.ip_address}
+                      </TableCell>
+                      <TableCell>
+                        {log.changes && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => console.log(log.changes)}
+                          >
+                            <Filter className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
 
-        <div className="mt-4 text-sm text-muted-foreground">
-          Showing {filteredLogs.length} of {logs.length} logs
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-muted-foreground">
+                Showing {((page - 1) * pageSize) + 1} to {Math.min(page * pageSize, totalCount)} of {totalCount} entries
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

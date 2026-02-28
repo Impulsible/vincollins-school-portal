@@ -119,6 +119,28 @@ export default function HomePage() {
     },
   ]
 
+  // Generate deterministic values for animations
+  const particlePositions = Array.from({ length: 20 }, (_, i) => ({
+    left: `${(i * 7) % 100}%`,
+    top: `${(i * 13) % 100}%`,
+    delay: `${(i * 0.3) % 5}s`,
+    duration: `${3 + (i % 5)}s`,
+  }))
+
+  const floatPositions = Array.from({ length: 15 }, (_, i) => ({
+    left: `${(i * 11) % 100}%`,
+    top: `${(i * 17) % 100}%`,
+    delay: `${(i * 0.4) % 5}s`,
+    duration: `${5 + (i % 5)}s`,
+  }))
+
+  const sparklePositions = Array.from({ length: 10 }, (_, i) => ({
+    left: `${(i * 19) % 100}%`,
+    top: `${(i * 23) % 100}%`,
+    delay: `${(i * 0.5) % 3}s`,
+    duration: `${2 + (i % 3)}s`,
+  }))
+
   return (
     <main className="flex-1 overflow-hidden">
       {/* Hero Section */}
@@ -128,17 +150,17 @@ export default function HomePage() {
         <div className="absolute top-20 left-10 w-96 h-96 bg-primary/5 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-20 right-10 w-96 h-96 bg-secondary/5 rounded-full blur-3xl animate-pulse animation-delay-2000" />
         
-        {/* Floating particles */}
+        {/* Floating particles - deterministic positions */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {[...Array(20)].map((_, i) => (
+          {particlePositions.map((pos, i) => (
             <div
               key={i}
               className="absolute w-1 h-1 bg-primary/20 rounded-full animate-float-particle"
               style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 5}s`,
-                animationDuration: `${3 + Math.random() * 5}s`,
+                left: pos.left,
+                top: pos.top,
+                animationDelay: pos.delay,
+                animationDuration: pos.duration,
               }}
             />
           ))}
@@ -206,7 +228,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Right Content - Hero Image with Clean Design (98% rate removed) */}
+            {/* Right Content - Hero Image */}
             <div className="relative animate-fade-in-right">
               <div className="relative w-full h-[600px] rounded-3xl overflow-hidden shadow-2xl group">
                 <Image
@@ -219,12 +241,12 @@ export default function HomePage() {
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
                 
-                {/* Achievement badge only - 98% rate removed */}
+                {/* Achievement badge */}
                 <div className="absolute top-6 right-6 bg-white/90 backdrop-blur-sm text-foreground px-5 py-2.5 rounded-full text-sm font-medium shadow-lg border border-white animate-float animation-delay-1000 hover:scale-105 transition-transform">
                   ⭐ Top Rated School 2024
                 </div>
 
-                {/* Floating sparkles */}
+                {/* Floating sparkles - deterministic positions */}
                 <Sparkle className="absolute top-20 left-20 h-6 w-6 text-yellow-400 animate-sparkle" />
                 <Sparkle className="absolute bottom-20 right-20 h-8 w-8 text-secondary animate-sparkle animation-delay-500" />
               </div>
@@ -465,17 +487,17 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-[#0A2472] opacity-5" />
         <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-white to-transparent" />
         
-        {/* Floating particles */}
+        {/* Floating particles - deterministic positions */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {[...Array(15)].map((_, i) => (
+          {floatPositions.map((pos, i) => (
             <div
               key={i}
               className="absolute w-2 h-2 bg-primary/10 rounded-full animate-float"
               style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 5}s`,
-                animationDuration: `${5 + Math.random() * 5}s`,
+                left: pos.left,
+                top: pos.top,
+                animationDelay: pos.delay,
+                animationDuration: pos.duration,
               }}
             />
           ))}
@@ -513,9 +535,9 @@ export default function HomePage() {
                   ))}
                 </div>
                 
-                {/* Quote */}
-                <p className="text-lg text-foreground/80 leading-relaxed mb-8 italic group-hover:text-foreground transition-colors">
-                  "{testimonial.quote}"
+                {/* Quote - fixed unescaped entities */}
+                <p className="text-lg text-foreground/80 leading-relaxed mb-8 italic">
+                  &quot;{testimonial.quote}&quot;
                 </p>
                 
                 {/* Author */}
@@ -536,17 +558,17 @@ export default function HomePage() {
         <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-white/5 rounded-full blur-3xl animate-pulse animation-delay-2000" />
         
-        {/* Floating sparkles */}
+        {/* Floating sparkles - deterministic positions */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {[...Array(10)].map((_, i) => (
+          {sparklePositions.map((pos, i) => (
             <Sparkle
               key={i}
               className="absolute h-4 w-4 text-white/20 animate-sparkle"
               style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 3}s`,
-                animationDuration: `${2 + Math.random() * 3}s`,
+                left: pos.left,
+                top: pos.top,
+                animationDelay: pos.delay,
+                animationDuration: pos.duration,
               }}
             />
           ))}

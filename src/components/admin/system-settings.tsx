@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -25,9 +25,10 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Save, RefreshCw, Database, Shield, Mail, Bell } from 'lucide-react'
+import { Save, RefreshCw, Database, Shield, Mail, Bell, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/hooks/use-toast'
+import { format } from 'date-fns'
 
 const generalSettingsSchema = z.object({
   school_name: z.string().min(1, 'School name is required'),
@@ -112,9 +113,9 @@ export function SystemSettings() {
     try {
       // Save to database or config file
       await new Promise(resolve => setTimeout(resolve, 1000))
-      success('General settings saved')
+      success?.('General settings saved')
     } catch (err) {
-      error('Failed to save settings')
+      error?.('Failed to save settings')
     } finally {
       setIsSaving(false)
     }
@@ -126,9 +127,9 @@ export function SystemSettings() {
       // Update auth settings
       const supabase = createClient()
       // Note: This would require admin API access
-      success('Security settings saved')
+      success?.('Security settings saved')
     } catch (err) {
-      error('Failed to save settings')
+      error?.('Failed to save settings')
     } finally {
       setIsSaving(false)
     }
@@ -138,9 +139,9 @@ export function SystemSettings() {
     setIsSaving(true)
     try {
       // Test email connection
-      success('Email settings saved and tested')
+      success?.('Email settings saved and tested')
     } catch (err) {
-      error('Failed to save email settings')
+      error?.('Failed to save email settings')
     } finally {
       setIsSaving(false)
     }
@@ -151,9 +152,9 @@ export function SystemSettings() {
     try {
       // Send test email
       await new Promise(resolve => setTimeout(resolve, 1000))
-      success('Test email sent successfully')
+      success?.('Test email sent successfully')
     } catch (err) {
-      error('Failed to send test email')
+      error?.('Failed to send test email')
     } finally {
       setIsLoading(false)
     }
@@ -164,9 +165,9 @@ export function SystemSettings() {
     try {
       // Trigger database backup
       await new Promise(resolve => setTimeout(resolve, 2000))
-      success('Database backup completed')
+      success?.('Database backup completed')
     } catch (err) {
-      error('Backup failed')
+      error?.('Backup failed')
     } finally {
       setIsLoading(false)
     }
@@ -673,13 +674,11 @@ export function SystemSettings() {
                 <div>
                   <h3 className="font-medium">System Logs</h3>
                   <p className="text-sm text-muted-foreground">
-                    View and download system logs
-                                 <p className="text-sm text-muted-foreground">
                     View and download system logs for debugging
                   </p>
                 </div>
                 <Button variant="outline" asChild>
-                  <a href="/admin/system/logs" target="_blank">
+                  <a href="/admin/system/logs" target="_blank" rel="noopener noreferrer">
                     <FileText className="mr-2 h-4 w-4" />
                     View Logs
                   </a>
@@ -689,7 +688,7 @@ export function SystemSettings() {
 
             <Alert>
               <AlertDescription>
-                Last automated backup: {format(new Date(), 'PPP')} at 02:00 AM
+                Last automated backup: Today at 02:00 AM
               </AlertDescription>
             </Alert>
           </CardContent>

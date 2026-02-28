@@ -1,371 +1,373 @@
-'use client'
-
-import { useState, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useToast } from './use-toast'
-import { GRADING_SCALES, type ResultEntryData, type ResultWithDetails } from '@/types/result'
+import { useToast } from '@/hooks/use-toast'
+
+interface Result {
+  id: string
+  student_id: string
+  subject_id: string
+  class_id: string
+  term: string
+  academic_year: string
+  assessment_type: string
+  score: number
+  grade: string
+  remarks: string
+  status: 'draft' | 'submitted' | 'approved' | 'published'
+  entered_by: string
+  approved_by?: string
+  published_at?: string
+  created_at: string
+  updated_at: string
+}
+
+interface ResultWithDetails extends Result {
+  student?: {
+    id: string
+    first_name: string
+    last_name: string
+    student_number: string
+  }
+  subject?: {
+    id: string
+    name: string
+    code: string
+  }
+  class?: {
+    id: string
+    name: string
+    code: string
+  }
+}
+
+interface StudentResultSummary {
+  studentId: string
+  studentName: string
+  className: string
+  term: string
+  academicYear: string
+  subjects: {
+    name: string
+    score: number
+    grade: string
+    remarks: string
+  }[]
+  totalScore: number
+  averageScore: number
+  gpa: number
+}
 
 export function useResults() {
-  const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState<ResultWithDetails[]>([])
-  const { success, error } = useToast()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const { success, error: toastError } = useToast()
+  const supabase = createClient()
 
-  const calculateGrade = (totalScore: number): { grade: string; grade_point: number; remark: string } => {
-    const scale = GRADING_SCALES.find(
-      s => totalScore >= s.min_score && totalScore <= s.max_score
-    ) || GRADING_SCALES[GRADING_SCALES.length - 1]
-    
-    return {
-      grade: scale.grade,
-      grade_point: scale.grade_point,
-      remark: scale.remark,
-    }
-  }
+  const fetchResults = async (filters?: {
+    classId?: string
+    subjectId?: string
+    studentId?: string
+    term?: string
+    academicYear?: string
+    status?: string
+  }) => {
+    setLoading(true)
+    setError(null)
 
-  const enterResult = useCallback(async (data: ResultEntryData) => {
-    setIsLoading(true)
     try {
-      const supabase = createClient()
-      
-      const totalScore = data.ca_score + data.exam_score
-      const { grade, grade_point, remark } = calculateGrade(totalScore)
-
-      const { data: result, error: insertError } = await supabase
-        .from('results')
-        .insert({
-          student_id: data.student_id,
-          subject_id: data.subject_id,
-          class_id: data.class_id,
-          academic_term: data.academic_term,
-          ca_score: data.ca_score,
-          exam_score: data.exam_score,
-          total_score: totalScore,
-          grade,
-          remark: data.remark || remark,
-          entered_by: (await supabase.auth.getUser()).data.user?.id,
-          status: 'draft',
-        })
-        .select()
-        .single()
-
-      if (insertError) throw insertError
-
-      success('Result entered successfully')
-      return result
-    } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to enter result')
-      return null
-    } finally {
-      setIsLoading(false)
-    }
-  }, [success, error])
-
-  const enterBatchResults = useCallback(async (resultsData: ResultEntryData[]) => {
-    setIsLoading(true)
-    try {
-      const supabase = createClient()
-      const userId = (await supabase.auth.getUser()).data.user?.id
-
-      const resultsToInsert = resultsData.map(data => {
-        const totalScore = data.ca_score + data.exam_score
-        const { grade, remark } = calculateGrade(totalScore)
-        
-        return {
-          student_id: data.student_id,
-          subject_id: data.subject_id,
-          class_id: data.class_id,
-          academic_term: data.academic_term,
-          ca_score: data.ca_score,
-          exam_score: data.exam_score,
-          total_score: totalScore,
-          grade,
-          remark: data.remark || remark,
-          entered_by: userId,
-          status: 'draft',
-        }
-      })
-
-      const { data, error: insertError } = await supabase
-        .from('results')
-        .insert(resultsToInsert)
-        .select()
-
-      if (insertError) throw insertError
-
-      success(`Successfully entered ${data.length} results`)
-      return data
-    } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to enter batch results')
-      return null
-    } finally {
-      setIsLoading(false)
-    }
-  }, [success, error])
-
-  const getClassResults = useCallback(async (
-    classId: string,
-    subjectId: string,
-    term: string
-  ) => {
-    setIsLoading(true)
-    try {
-      const supabase = createClient()
-      
-      const { data, error: fetchError } = await supabase
-        .from('results')
-        .select(`
-          *,
-          student:students(
-            admission_number,
-            user:users(first_name, last_name)
-          )
-        `)
-        .eq('class_id', classId)
-        .eq('subject_id', subjectId)
-        .eq('academic_term', term)
-        .order('created_at', { ascending: false })
-
-      if (fetchError) throw fetchError
-
-      setResults(data || [])
-      return data
-    } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to fetch results')
-      return null
-    } finally {
-      setIsLoading(false)
-    }
-  }, [error])
-
-  const getStudentResults = useCallback(async (studentId: string, term?: string) => {
-    setIsLoading(true)
-    try {
-      const supabase = createClient()
-      
       let query = supabase
         .from('results')
         .select(`
           *,
-          subject:subjects(name, code, credit_units)
+          student:students!inner (
+            id,
+            first_name,
+            last_name,
+            student_number
+          ),
+          subject:subjects!inner (
+            id,
+            name,
+            code
+          ),
+          class:classes!inner (
+            id,
+            name,
+            code
+          )
         `)
-        .eq('student_id', studentId)
-        .eq('status', 'published')
         .order('created_at', { ascending: false })
 
-      if (term) {
-        query = query.eq('academic_term', term)
+      if (filters?.classId) {
+        query = query.eq('class_id', filters.classId)
       }
 
-      const { data, error: fetchError } = await query
+      if (filters?.subjectId) {
+        query = query.eq('subject_id', filters.subjectId)
+      }
 
-      if (fetchError) throw fetchError
+      if (filters?.studentId) {
+        query = query.eq('student_id', filters.studentId)
+      }
 
-      return data
+      if (filters?.term) {
+        query = query.eq('term', filters.term)
+      }
+
+      if (filters?.academicYear) {
+        query = query.eq('academic_year', filters.academicYear)
+      }
+
+      if (filters?.status) {
+        query = query.eq('status', filters.status)
+      }
+
+      const { data, error } = await query
+
+      if (error) throw error
+
+      setResults(data || [])
     } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to fetch results')
-      return null
+      console.error('Error fetching results:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch results')
+      toastError?.('Failed to load results')
     } finally {
-      setIsLoading(false)
+      setLoading(false)
     }
-  }, [error])
+  }
 
-  const calculateStudentGPA = useCallback((results: any[]) => {
-    if (!results.length) return 0
-
-    let totalGradePoints = 0
-    let totalCredits = 0
-
-    results.forEach(result => {
-      const creditUnits = result.subject?.credit_units || 1
-      const { grade_point } = calculateGrade(result.total_score)
-      
-      totalGradePoints += grade_point * creditUnits
-      totalCredits += creditUnits
-    })
-
-    return totalCredits > 0 ? Number((totalGradePoints / totalCredits).toFixed(2)) : 0
-  }, [])
-
-  const submitForApproval = useCallback(async (resultIds: string[]) => {
-    setIsLoading(true)
+  const getStudentResults = async (studentId: string): Promise<ResultWithDetails[]> => {
     try {
-      const supabase = createClient()
-      
-      const { error: updateError } = await supabase
+      const { data, error } = await supabase
         .from('results')
-        .update({ status: 'pending' })
-        .in('id', resultIds)
-        .eq('status', 'draft')
-
-      if (updateError) throw updateError
-
-      success('Results submitted for approval')
-      return true
-    } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to submit results')
-      return false
-    } finally {
-      setIsLoading(false)
-    }
-  }, [success, error])
-
-  const approveResults = useCallback(async (resultIds: string[]) => {
-    setIsLoading(true)
-    try {
-      const supabase = createClient()
-      const userId = (await supabase.auth.getUser()).data.user?.id
-      
-      const { error: updateError } = await supabase
-        .from('results')
-        .update({ 
-          status: 'approved',
-          approved_by: userId,
-          approved_at: new Date().toISOString(),
-        })
-        .in('id', resultIds)
-        .eq('status', 'pending')
-
-      if (updateError) throw updateError
-
-      success('Results approved')
-      return true
-    } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to approve results')
-      return false
-    } finally {
-      setIsLoading(false)
-    }
-  }, [success, error])
-
-  const publishResults = useCallback(async (resultIds: string[]) => {
-    setIsLoading(true)
-    try {
-      const supabase = createClient()
-      
-      const { error: updateError } = await supabase
-        .from('results')
-        .update({ status: 'published' })
-        .in('id', resultIds)
-        .eq('status', 'approved')
-
-      if (updateError) throw updateError
-
-      success('Results published successfully')
-      return true
-    } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to publish results')
-      return false
-    } finally {
-      setIsLoading(false)
-    }
-  }, [success, error])
-
-  const getPendingApprovalCount = useCallback(async () => {
-    try {
-      const supabase = createClient()
-      
-      const { count, error: countError } = await supabase
-        .from('results')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending')
-
-      if (countError) throw countError
-      return count || 0
-    } catch (err) {
-      console.error('Failed to get pending count:', err)
-      return 0
-    }
-  }, [])
-
-  const generateResultSummary = useCallback(async (
-    studentId: string,
-    term: string
-  ): Promise<StudentResultSummary | null> => {
-    try {
-      const supabase = createClient()
-      
-      // Get student details
-      const { data: student } = await supabase
-        .from('students')
         .select(`
           *,
-          user:users(first_name, last_name),
-          class:classes(name, code)
+          subject:subjects!inner (
+            id,
+            name,
+            code
+          ),
+          class:classes!inner (
+            id,
+            name,
+            code
+          )
+        `)
+        .eq('student_id', studentId)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      return data || []
+    } catch (err) {
+      console.error('Error fetching student results:', err)
+      toastError?.('Failed to load student results')
+      return []
+    }
+  }
+
+  const getClassResults = async (classId: string, term?: string, academicYear?: string) => {
+    try {
+      let query = supabase
+        .from('results')
+        .select(`
+          *,
+          student:students!inner (
+            id,
+            first_name,
+            last_name,
+            student_number
+          ),
+          subject:subjects!inner (
+            id,
+            name,
+            code
+          )
+        `)
+        .eq('class_id', classId)
+        .order('student_id')
+
+      if (term) {
+        query = query.eq('term', term)
+      }
+
+      if (academicYear) {
+        query = query.eq('academic_year', academicYear)
+      }
+
+      const { data, error } = await query
+
+      if (error) throw error
+
+      return data || []
+    } catch (err) {
+      console.error('Error fetching class results:', err)
+      toastError?.('Failed to load class results')
+      return []
+    }
+  }
+
+  const generateResultSummary = async (studentId: string, term: string): Promise<StudentResultSummary | null> => {
+    try {
+      const [termName, academicYear] = term.split(' ')
+
+      const { data: student, error: studentError } = await supabase
+        .from('students')
+        .select(`
+          first_name,
+          last_name,
+          class:classes (
+            name
+          )
         `)
         .eq('id', studentId)
         .single()
 
-      if (!student) return null
+      if (studentError) throw studentError
 
-      // Get results for the term
-      const results = await getStudentResults(studentId, term)
-      if (!results) return null
-
-      // Calculate GPA and prepare subject details
-      let totalCredits = 0
-      let totalGradePoints = 0
-      const subjects = []
-
-      for (const result of results) {
-        const creditUnits = result.subject?.credit_units || 1
-        const { grade_point } = calculateGrade(result.total_score)
-        
-        totalCredits += creditUnits
-        totalGradePoints += grade_point * creditUnits
-        
-        subjects.push({
-          subject_id: result.subject_id,
-          subject_name: result.subject?.name || 'Unknown',
-          subject_code: result.subject?.code || 'UNK',
-          ca_score: result.ca_score,
-          exam_score: result.exam_score,
-          total_score: result.total_score,
-          grade: result.grade,
-          grade_point,
-          remark: result.remark,
-          credit_units: creditUnits,
-        })
+      // FIXED: Handle case where class might be an array
+      let className = 'N/A'
+      if (student.class) {
+        // Check if class is an array
+        if (Array.isArray(student.class) && student.class.length > 0) {
+          className = student.class[0]?.name || 'N/A'
+        } 
+        // Check if class is an object
+        else if (typeof student.class === 'object' && student.class !== null) {
+          className = (student.class as any).name || 'N/A'
+        }
       }
 
-      const gpa = totalCredits > 0 ? totalGradePoints / totalCredits : 0
+      const results = await getStudentResults(studentId)
+      const termResults = results.filter(
+        r => r.term === termName && r.academic_year === academicYear
+      )
 
-      // Get student's CGPA
-      const { data: cgpaData } = await supabase
-        .rpc('calculate_cgpa', { student_id_param: studentId })
+      const subjects = termResults.map(r => ({
+        name: r.subject?.name || 'Unknown',
+        score: r.score,
+        grade: r.grade,
+        remarks: r.remarks,
+      }))
+
+      const totalScore = termResults.reduce((sum, r) => sum + r.score, 0)
+      const averageScore = termResults.length > 0 ? totalScore / termResults.length : 0
+      const gpa = (averageScore / 100) * 4 // Convert to 4.0 scale
 
       return {
-        student_id: studentId,
-        student_name: `${student.user?.first_name} ${student.user?.last_name}`,
-        admission_number: student.admission_number,
-        class_name: student.class?.name,
-        class_code: student.class?.code,
-        term,
-        session: term.split(' ')[0], // Extract session from term
+        studentId,
+        studentName: `${student.first_name} ${student.last_name}`,
+        className,
+        term: termName,
+        academicYear,
         subjects,
-        total_credits: totalCredits,
-        total_grade_points: totalGradePoints,
-        gpa: Number(gpa.toFixed(2)),
-        cgpa: cgpaData || 0,
+        totalScore,
+        averageScore: parseFloat(averageScore.toFixed(2)),
+        gpa: parseFloat(gpa.toFixed(2)),
       }
     } catch (err) {
-      console.error('Failed to generate summary:', err)
+      console.error('Error generating result summary:', err)
+      toastError?.('Failed to generate result summary')
       return null
     }
-  }, [getStudentResults])
+  }
+
+  const createResult = async (result: Omit<Result, 'id' | 'created_at' | 'updated_at'>) => {
+    try {
+      const { data, error } = await supabase
+        .from('results')
+        .insert([result])
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setResults(prev => [data, ...prev])
+      success?.('Result created successfully')
+      return data
+    } catch (err) {
+      console.error('Error creating result:', err)
+      toastError?.('Failed to create result')
+      return null
+    }
+  }
+
+  const updateResult = async (id: string, updates: Partial<Result>) => {
+    try {
+      const { data, error } = await supabase
+        .from('results')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setResults(prev => prev.map(r => r.id === id ? data : r))
+      success?.('Result updated successfully')
+      return data
+    } catch (err) {
+      console.error('Error updating result:', err)
+      toastError?.('Failed to update result')
+      return null
+    }
+  }
+
+  const deleteResult = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('results')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+
+      setResults(prev => prev.filter(r => r.id !== id))
+      success?.('Result deleted successfully')
+      return true
+    } catch (err) {
+      console.error('Error deleting result:', err)
+      toastError?.('Failed to delete result')
+      return false
+    }
+  }
+
+  const submitForApproval = async (id: string) => {
+    return updateResult(id, { status: 'submitted' })
+  }
+
+  const approveResult = async (id: string, approvedBy: string) => {
+    return updateResult(id, { 
+      status: 'approved', 
+      approved_by: approvedBy 
+    })
+  }
+
+  const publishResult = async (id: string) => {
+    return updateResult(id, { 
+      status: 'published',
+      published_at: new Date().toISOString()
+    })
+  }
+
+  useEffect(() => {
+    fetchResults()
+  }, [])
 
   return {
-    isLoading,
     results,
-    enterResult,
-    enterBatchResults,
-    getClassResults,
+    loading,
+    error,
+    fetchResults,
     getStudentResults,
-    calculateStudentGPA,
-    calculateGrade,
-    submitForApproval,
-    approveResults,
-    publishResults,
-    getPendingApprovalCount,
+    getClassResults,
     generateResultSummary,
+    createResult,
+    updateResult,
+    deleteResult,
+    submitForApproval,
+    approveResult,
+    publishResult,
   }
 }

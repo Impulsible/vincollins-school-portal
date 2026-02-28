@@ -35,6 +35,7 @@ import { StaffIdGenerator } from '@/components/staff/staff-id-generator'
 import { useStaffId } from '@/hooks/use-staff-id'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/hooks/use-toast'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 
@@ -59,7 +60,13 @@ type StaffFormData = z.infer<typeof staffSchema>
 export default function CreateStaffPage() {
   const router = useRouter()
   const { success, error } = useToast()
-  const { generateStaffCredentials, getDepartmentOptions, departments } = useStaffId()
+  const { 
+    generateStaffCredentials, 
+    getDepartmentOptions, 
+    departments,
+    generateNewStaffId,
+    isLoading: staffIdLoading 
+  } = useStaffId()
   const [isLoading, setIsLoading] = useState(false)
   const [generatedCredentials, setGeneratedCredentials] = useState<{
     email: string
@@ -89,22 +96,18 @@ export default function CreateStaffPage() {
         .maybeSingle()
 
       if (existingStaff) {
-        error('Staff number already exists')
+        error?.('Staff number already exists')
         setIsLoading(false)
         return
       }
 
-      // Generate credentials
-      const credentials = await generateStaffCredentials(
-        data.firstName,
-        data.lastName,
-        data.staffNumber
-      )
+      // Generate credentials - FIXED: Pass only the staffId
+      const credentials = await generateStaffCredentials(data.staffNumber)
 
       // Create auth user
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: credentials.email,
-        password: credentials.tempPassword,
+        password: credentials.password, // FIXED: Use credentials.password instead of tempPassword
         email_confirm: true,
         user_metadata: {
           first_name: data.firstName,
@@ -148,8 +151,14 @@ export default function CreateStaffPage() {
 
       if (staffError) throw staffError
 
-      setGeneratedCredentials(credentials)
-      success('Staff account created successfully')
+      setGeneratedCredentials({
+        email: credentials.email,
+        badgeNumber: data.staffNumber,
+        tempPassword: credentials.password,
+        staffId: data.staffNumber,
+      })
+      
+      success?.('Staff account created successfully')
 
       // Reset form after 3 seconds
       setTimeout(() => {
@@ -157,21 +166,27 @@ export default function CreateStaffPage() {
       }, 3000)
 
     } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to create staff')
+      error?.(err instanceof Error ? err.message : 'Failed to create staff')
     } finally {
       setIsLoading(false)
     }
   }
 
   const refreshStaffId = async () => {
-    const { generateNewStaffId } = useStaffId()
-    const newId = await generateNewStaffId({
-      departmentCode: form.getValues('department'),
-    })
+    const department = form.getValues('department')
+    if (!department) {
+      error?.('Please select a department first')
+      return
+    }
+    
+    const newId = await generateNewStaffId()
     if (newId) {
       form.setValue('staffNumber', newId)
+      success?.('New staff ID generated')
     }
   }
+
+  const departmentOptions = getDepartmentOptions ? getDepartmentOptions() : departments || []
 
   return (
     <div className="container max-w-4xl py-6 space-y-6">
@@ -281,9 +296,10 @@ export default function CreateStaffPage() {
                               variant="outline"
                               size="icon"
                               onClick={refreshStaffId}
+                              disabled={staffIdLoading}
                               title="Generate new staff ID"
                             >
-                              <RefreshCw className="h-4 w-4" />
+                              <RefreshCw className={`h-4 w-4 ${staffIdLoading ? 'animate-spin' : ''}`} />
                             </Button>
                           </div>
                           <FormDescription>
@@ -307,9 +323,9 @@ export default function CreateStaffPage() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {departments.map((dept) => (
-                                <SelectItem key={dept.code} value={dept.code}>
-                                  {dept.code} - {dept.name}
+                              {departmentOptions.map((dept: any) => (
+                                <SelectItem key={dept.value || dept.code} value={dept.value || dept.code}>
+                                  {dept.label || dept.name} ({dept.value || dept.code})
                                 </SelectItem>
                               ))}
                             </SelectContent>

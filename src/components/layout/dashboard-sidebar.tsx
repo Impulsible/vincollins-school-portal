@@ -27,6 +27,18 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
+interface ChildNavItem {
+  title: string
+  href: string
+}
+
+interface NavItem {
+  title: string
+  href: string
+  icon: React.ElementType
+  children?: ChildNavItem[]
+}
+
 interface DashboardSidebarProps {
   user: any
 }
@@ -42,8 +54,8 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
     router.refresh()
   }
 
-  const getNavigationItems = () => {
-    const baseItems = [
+  const getNavigationItems = (): NavItem[] => {
+    const baseItems: NavItem[] = [
       {
         title: 'Dashboard',
         href: '/dashboard',
@@ -239,11 +251,16 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
 
   const navigationItems = getNavigationItems()
 
+  // Helper function to check if a path is active
+  const isPathActive = (href: string): boolean => {
+    return pathname === href || pathname.startsWith(href + '/')
+  }
+
   return (
-    <div className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 bg-portal-deep text-white">
+    <div className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 bg-[#0A2472] text-white">
       <div className="flex h-16 items-center border-b border-white/10 px-6">
         <Link href="/dashboard" className="flex items-center space-x-2">
-          <span className="font-serif text-xl font-bold">Vincollins</span>
+          <span className="font-serif text-xl font-bold text-white">Vincollins</span>
           <span className="text-sm text-secondary">Portal</span>
         </Link>
       </div>
@@ -252,39 +269,51 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
         <nav className="space-y-1">
           {navigationItems.map((item) => {
             const Icon = item.icon
-            const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+            const isActive = isPathActive(item.href)
+            const hasChildren = item.children && item.children.length > 0
+            const showChildren = hasChildren && isActive
             
             return (
               <div key={item.href} className="space-y-1">
                 <Link
                   href={item.href}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-200',
                     isActive
-                      ? 'bg-white/10 text-secondary'
-                      : 'text-white/70 hover:bg-white/5 hover:text-white'
+                      ? 'bg-white/15 text-secondary font-medium'
+                      : 'text-white/70 hover:bg-white/10 hover:text-white'
                   )}
                 >
                   <Icon className="h-4 w-4" />
                   <span>{item.title}</span>
+                  {isActive && (
+                    <span className="ml-auto h-1.5 w-1.5 rounded-full bg-secondary" />
+                  )}
                 </Link>
                 
-                {item.children && isActive && (
-                  <div className="ml-6 space-y-1">
-                    {item.children.map((child) => (
-                      <Link
-                        key={child.href}
-                        href={child.href}
-                        className={cn(
-                          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                          pathname === child.href
-                            ? 'bg-white/10 text-secondary'
-                            : 'text-white/60 hover:bg-white/5 hover:text-white'
-                        )}
-                      >
-                        <span>{child.title}</span>
-                      </Link>
-                    ))}
+                {showChildren && (
+                  <div className="ml-6 space-y-1 mt-1">
+                    {item.children?.map((child) => {
+                      const isChildActive = pathname === child.href
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          className={cn(
+                            'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-200',
+                            isChildActive
+                              ? 'bg-white/15 text-secondary font-medium'
+                              : 'text-white/60 hover:bg-white/10 hover:text-white'
+                          )}
+                        >
+                          <span className="text-xs">•</span>
+                          <span>{child.title}</span>
+                          {isChildActive && (
+                            <span className="ml-auto h-1 w-1 rounded-full bg-secondary" />
+                          )}
+                        </Link>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -295,11 +324,11 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
 
       <div className="border-t border-white/10 p-4">
         <div className="flex items-center gap-3 rounded-lg bg-white/5 px-3 py-2">
-          <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
+          <div className="h-8 w-8 rounded-full bg-secondary/20 flex items-center justify-center">
             <UserCircle className="h-5 w-5 text-secondary" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">
+            <p className="text-sm font-medium text-white truncate">
               {user?.first_name} {user?.last_name}
             </p>
             <p className="text-xs text-white/60 capitalize">{user?.role}</p>
@@ -307,7 +336,7 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
         </div>
         <Button
           variant="ghost"
-          className="mt-2 w-full justify-start text-white/70 hover:text-white hover:bg-white/5"
+          className="mt-2 w-full justify-start text-white/70 hover:text-white hover:bg-white/10"
           onClick={handleLogout}
         >
           <LogOut className="mr-2 h-4 w-4" />

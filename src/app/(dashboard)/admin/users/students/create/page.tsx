@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -35,23 +35,24 @@ import { StudentIdGenerator } from '@/components/student/student-id-generator'
 import { useStudentId } from '@/hooks/use-student-id'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/hooks/use-toast'
-import { ArrowLeft, Loader2, RefreshCw, GraduationCap } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
-import { AlertDescription } from '@/components/ui/alert'
 
 const studentSchema = z.object({
   firstName: z.string().min(2, 'First name must be at least 2 characters'),
   lastName: z.string().min(2, 'Last name must be at least 2 characters'),
   email: z.string().email('Invalid email address').optional().or(z.literal('')),
-  phone: z.string().min(10, 'Phone number must be at least 10 digits').optional().or(z.literal('')),
-  admissionNumber: z.string().min(1, 'Admission number is required'),
+  phone: z.string().min(10, 'Phone number must be at least 10 digits'),
+  studentNumber: z.string().min(1, 'Student number is required'),
+  section: z.enum(['creche', 'nursery', 'primary', 'college']),
   classId: z.string().min(1, 'Class is required'),
   dateOfBirth: z.string().min(1, 'Date of birth is required'),
   gender: z.enum(['male', 'female', 'other']),
   address: z.string().optional(),
-  parentName: z.string().min(2, 'Parent name is required'),
-  parentPhone: z.string().min(10, 'Parent phone is required'),
-  parentEmail: z.string().email('Invalid email').optional().or(z.literal('')),
+  guardianName: z.string().min(2, 'Guardian name is required'),
+  guardianPhone: z.string().min(10, 'Guardian phone is required'),
+  guardianEmail: z.string().email('Invalid email address').optional().or(z.literal('')),
   enrollmentDate: z.string().min(1, 'Enrollment date is required'),
 })
 
@@ -62,85 +63,73 @@ export default function CreateStudentPage() {
   const { success, error } = useToast()
   const { 
     generateNewStudentId, 
-    generateStudentCredentials, 
+    generateStudentCredentials,
     getClassOptions,
     getClassesBySection,
     getSectionOptions,
-    validateStudentId 
+    isLoading: studentIdLoading 
   } = useStudentId()
-  
   const [isLoading, setIsLoading] = useState(false)
-  const [classes, setClasses] = useState<Array<{ id: string; name: string; code: string }>>([])
   const [generatedCredentials, setGeneratedCredentials] = useState<{
     email: string
-    badgeNumber: string
-    tempPassword: string
     studentId: string
-    admissionYear?: number
-    classCode?: string
+    tempPassword: string
   } | null>(null)
 
   const form = useForm<StudentFormData>({
     resolver: zodResolver(studentSchema),
     defaultValues: {
       gender: 'male',
+      section: 'primary',
       enrollmentDate: new Date().toISOString().split('T')[0],
     },
   })
 
-  // Fetch classes on mount
-  useEffect(() => {
-    const fetchClasses = async () => {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('classes')
-        .select('id, name, code')
-        .order('name')
-      
-      if (data) {
-        setClasses(data)
-      }
-    }
+  const selectedSection = form.watch('section')
+  const classOptions = selectedSection ? getClassesBySection(selectedSection) : []
+  const sectionOptions = getSectionOptions ? getSectionOptions() : []
 
-    fetchClasses()
-  }, [])
+  const refreshStudentId = async () => {
+    const section = form.getValues('section')
+    if (!section) {
+      error?.('Please select a section first')
+      return
+    }
+    
+    const newId = await generateNewStudentId(section)
+    if (newId) {
+      form.setValue('studentNumber', newId)
+      success?.('New student ID generated')
+    }
+  }
 
   const onSubmit = async (data: StudentFormData) => {
     setIsLoading(true)
     try {
       const supabase = createClient()
 
-      // Check if admission number already exists
+      // Check if student number already exists
       const { data: existingStudent } = await supabase
         .from('students')
-        .select('admission_number')
-        .eq('admission_number', data.admissionNumber)
+        .select('student_number')
+        .eq('student_number', data.studentNumber)
         .maybeSingle()
 
       if (existingStudent) {
-        error('Admission number already exists')
+        error?.('Student number already exists')
         setIsLoading(false)
         return
       }
 
-      // Get class details for ID parsing
-      const selectedClass = classes.find(c => c.id === data.classId)
-      
       // Generate credentials
-      const credentials = await generateStudentCredentials(
-        data.firstName,
-        data.lastName,
-        data.admissionNumber,
-        selectedClass?.name
-      )
+      const credentials = await generateStudentCredentials(data.studentNumber)
 
-      // Create auth user (optional - students might not need login initially)
-      let authUserId = null
-      
+      // Create auth user if email is provided
+      let authData = null
       if (data.email) {
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-          email: credentials.email,
-          password: credentials.tempPassword,
+        const { data: authResult, error: authError } = await supabase.auth.admin.createUser({
+          email: data.email,
+          password: credentials.password,
           email_confirm: true,
           user_metadata: {
             first_name: data.firstName,
@@ -150,20 +139,20 @@ export default function CreateStudentPage() {
         })
 
         if (authError) throw authError
-        authUserId = authData.user.id
+        authData = authResult
       }
 
-      // Create user record if we created auth user
-      if (authUserId) {
+      // Create user record
+      if (authData) {
         const { error: userError } = await supabase
           .from('users')
           .insert({
-            id: authUserId,
-            email: credentials.email,
+            id: authData.user.id,
+            email: data.email,
             first_name: data.firstName,
             last_name: data.lastName,
             role: 'student',
-            phone: data.phone || null,
+            phone: data.phone,
             is_active: true,
           })
 
@@ -174,53 +163,39 @@ export default function CreateStudentPage() {
       const { error: studentError } = await supabase
         .from('students')
         .insert({
-          user_id: authUserId,
-          admission_number: data.admissionNumber,
+          user_id: authData?.user.id || null,
+          student_number: data.studentNumber,
+          first_name: data.firstName,
+          last_name: data.lastName,
           class_id: data.classId,
           date_of_birth: data.dateOfBirth,
           gender: data.gender,
-          address: data.address || null,
-          parent_name: data.parentName,
-          parent_phone: data.parentPhone,
-          parent_email: data.parentEmail || null,
+          address: data.address,
+          guardian_name: data.guardianName,
+          guardian_phone: data.guardianPhone,
+          guardian_email: data.guardianEmail,
           enrollment_date: data.enrollmentDate,
         })
 
       if (studentError) throw studentError
 
-      setGeneratedCredentials(credentials)
-      success('Student record created successfully')
+      setGeneratedCredentials({
+        email: data.email || credentials.email,
+        studentId: data.studentNumber,
+        tempPassword: credentials.password,
+      })
+      
+      success?.('Student account created successfully')
 
-      // Redirect after 3 seconds
+      // Reset form after 3 seconds
       setTimeout(() => {
         router.push('/admin/users/students')
       }, 3000)
 
     } catch (err) {
-      error(err instanceof Error ? err.message : 'Failed to create student')
+      error?.(err instanceof Error ? err.message : 'Failed to create student')
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const refreshStudentId = async () => {
-    const selectedClassId = form.getValues('classId')
-    if (!selectedClassId) {
-      error('Please select a class first')
-      return
-    }
-
-    const selectedClass = classes.find(c => c.id === selectedClassId)
-    if (!selectedClass) return
-
-    const newId = await generateNewStudentId({
-      format: 'standard',
-      classCode: selectedClass.code,
-      year: new Date().getFullYear(),
-    })
-
-    if (newId) {
-      form.setValue('admissionNumber', newId)
     }
   }
 
@@ -232,12 +207,12 @@ export default function CreateStudentPage() {
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <h1 className="text-2xl font-serif font-bold">Register New Student</h1>
+        <h1 className="text-2xl font-serif font-bold">Create New Student</h1>
       </div>
 
       <Tabs defaultValue="create" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="create">Register Student</TabsTrigger>
+          <TabsTrigger value="create">Create Student</TabsTrigger>
           <TabsTrigger value="generate">Generate Student ID</TabsTrigger>
         </TabsList>
 
@@ -246,7 +221,7 @@ export default function CreateStudentPage() {
             <CardHeader>
               <CardTitle>Student Information</CardTitle>
               <CardDescription>
-                Enter the student details to create their record
+                Enter the student details to create their account
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -290,12 +265,12 @@ export default function CreateStudentPage() {
                           <FormControl>
                             <Input 
                               type="email" 
-                              placeholder="student@example.com" 
+                              placeholder="john.doe@example.com" 
                               {...field} 
                             />
                           </FormControl>
                           <FormDescription>
-                            Required for portal access
+                            If provided, student will have portal access
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -307,7 +282,7 @@ export default function CreateStudentPage() {
                       name="phone"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Phone Number (Optional)</FormLabel>
+                          <FormLabel>Phone Number</FormLabel>
                           <FormControl>
                             <Input placeholder="+234 XXX XXX XXXX" {...field} />
                           </FormControl>
@@ -318,14 +293,14 @@ export default function CreateStudentPage() {
 
                     <FormField
                       control={form.control}
-                      name="admissionNumber"
+                      name="studentNumber"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Admission Number</FormLabel>
+                          <FormLabel>Student Number</FormLabel>
                           <div className="flex gap-2">
                             <FormControl>
                               <Input 
-                                placeholder="VSP-24-JSS1-0001" 
+                                placeholder="VSP-24-PR-0001" 
                                 {...field} 
                                 className="font-mono"
                               />
@@ -335,9 +310,10 @@ export default function CreateStudentPage() {
                               variant="outline"
                               size="icon"
                               onClick={refreshStudentId}
-                              title="Generate new admission number"
+                              disabled={studentIdLoading}
+                              title="Generate new student ID"
                             >
-                              <RefreshCw className="h-4 w-4" />
+                              <RefreshCw className={`h-4 w-4 ${studentIdLoading ? 'animate-spin' : ''}`} />
                             </Button>
                           </div>
                           <FormDescription>
@@ -350,20 +326,49 @@ export default function CreateStudentPage() {
 
                     <FormField
                       control={form.control}
+                      name="section"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Section</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select section" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {sectionOptions.map((section: any) => (
+                                <SelectItem key={section.value} value={section.value}>
+                                  {section.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
                       name="classId"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Class</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select 
+                            onValueChange={field.onChange} 
+                            defaultValue={field.value}
+                            disabled={!selectedSection}
+                          >
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select class" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {classes.map((cls) => (
-                                <SelectItem key={cls.id} value={cls.id}>
-                                  {cls.name} ({cls.code})
+                              {classOptions.map((cls: any) => (
+                                <SelectItem key={cls.value} value={cls.value}>
+                                  {cls.label}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -412,6 +417,52 @@ export default function CreateStudentPage() {
 
                     <FormField
                       control={form.control}
+                      name="guardianName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Guardian Name</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Parent/Guardian full name" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="guardianPhone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Guardian Phone</FormLabel>
+                          <FormControl>
+                            <Input placeholder="+234 XXX XXX XXXX" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="guardianEmail"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Guardian Email (Optional)</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="email" 
+                              placeholder="parent@example.com" 
+                              {...field} 
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
                       name="enrollmentDate"
                       render={({ field }) => (
                         <FormItem>
@@ -426,54 +477,12 @@ export default function CreateStudentPage() {
 
                     <FormField
                       control={form.control}
-                      name="parentName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Parent/Guardian Name</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Parent's full name" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="parentPhone"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Parent/Guardian Phone</FormLabel>
-                          <FormControl>
-                            <Input placeholder="+234 XXX XXX XXXX" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="parentEmail"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Parent/Guardian Email (Optional)</FormLabel>
-                          <FormControl>
-                            <Input type="email" placeholder="parent@example.com" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
                       name="address"
                       render={({ field }) => (
                         <FormItem className="md:col-span-2">
-                          <FormLabel>Residential Address</FormLabel>
+                          <FormLabel>Address</FormLabel>
                           <FormControl>
-                            <Input placeholder="Home address" {...field} />
+                            <Input placeholder="Residential address" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -483,7 +492,7 @@ export default function CreateStudentPage() {
 
                   <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Register Student
+                    Create Student Account
                   </Button>
                 </form>
               </Form>
@@ -500,10 +509,7 @@ export default function CreateStudentPage() {
       {generatedCredentials && (
         <Card className="border-success">
           <CardHeader>
-            <CardTitle className="text-success flex items-center gap-2">
-              <GraduationCap className="h-5 w-5" />
-              Student Record Created Successfully!
-            </CardTitle>
+            <CardTitle className="text-success">Student Account Created Successfully!</CardTitle>
             <CardDescription>
               Please save these credentials. They will not be shown again.
             </CardDescription>
@@ -511,43 +517,21 @@ export default function CreateStudentPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
               <div>
-                <p className="text-sm font-medium">Admission Number</p>
+                <p className="text-sm font-medium">Student ID</p>
                 <p className="font-mono">{generatedCredentials.studentId}</p>
               </div>
               <div>
-                <p className="text-sm font-medium">Badge Number</p>
-                <p className="font-mono">{generatedCredentials.badgeNumber}</p>
+                <p className="text-sm font-medium">Email</p>
+                <p className="font-mono">{generatedCredentials.email}</p>
               </div>
-              {generatedCredentials.admissionYear && (
-                <div>
-                  <p className="text-sm font-medium">Admission Year</p>
-                  <p className="font-mono">{generatedCredentials.admissionYear}</p>
-                </div>
-              )}
-              {generatedCredentials.classCode && (
-                <div>
-                  <p className="text-sm font-medium">Class Code</p>
-                  <p className="font-mono">{generatedCredentials.classCode}</p>
-                </div>
-              )}
-              {generatedCredentials.email && (
-                <>
-                  <div>
-                    <p className="text-sm font-medium">Email</p>
-                    <p className="font-mono">{generatedCredentials.email}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Temporary Password</p>
-                    <p className="font-mono">{generatedCredentials.tempPassword}</p>
-                  </div>
-                </>
-              )}
+              <div>
+                <p className="text-sm font-medium">Temporary Password</p>
+                <p className="font-mono">{generatedCredentials.tempPassword}</p>
+              </div>
             </div>
             <Alert>
               <AlertDescription>
-                {generatedCredentials.email 
-                  ? "The student will be required to change their password on first login."
-                  : "No email was provided. Portal access will not be available."}
+                The student will be required to change their password on first login.
               </AlertDescription>
             </Alert>
           </CardContent>

@@ -1,19 +1,17 @@
-/* eslint-disable react/no-unescaped-entities */
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Container } from '@/components/layout/container'
 
 export default function NotFound() {
   return (
-    <Container className="flex min-h-[70vh] flex-col items-center justify-center py-20 text-center">
-      <h1 className="font-serif text-6xl font-bold text-primary">404</h1>
-      <h2 className="mt-4 font-serif text-2xl">Page Not Found</h2>
-      <p className="mt-2 text-muted-foreground">
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+      <h1 className="text-6xl font-serif font-bold text-[#0A2472] mb-4">404</h1>
+      <h2 className="text-2xl font-serif mb-6">Page Not Found</h2>
+      <p className="text-muted-foreground mb-8 max-w-md">
         The page you're looking for doesn't exist or has been moved.
       </p>
-      <Button className="mt-8" asChild>
+      <Button asChild>
         <Link href="/">Return Home</Link>
       </Button>
-    </Container>
+    </div>
   )
 }

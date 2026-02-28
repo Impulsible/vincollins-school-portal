@@ -9,7 +9,7 @@ export interface StaffGenerationData {
   startingNumber?: number
 }
 
-export interface BulkGenerationData extends StaffGenerationData {}
+export type BulkGenerationData = StaffGenerationData
 
 export function useStaffId() {
   const [isLoading, setIsLoading] = useState(false)
@@ -19,12 +19,12 @@ export function useStaffId() {
 
   // Mock departments data
   const departments = [
-    { value: 'SCI', label: 'Science' },
-    { value: 'ART', label: 'Arts' },
-    { value: 'COM', label: 'Commercial' },
-    { value: 'TEC', label: 'Technical' },
-    { value: 'ADM', label: 'Administration' },
-    { value: 'FAC', label: 'Faculty' },
+    { value: 'SCI', label: 'Science', code: 'SCI' },
+    { value: 'ART', label: 'Arts', code: 'ART' },
+    { value: 'COM', label: 'Commercial', code: 'COM' },
+    { value: 'TEC', label: 'Technical', code: 'TEC' },
+    { value: 'ADM', label: 'Administration', code: 'ADM' },
+    { value: 'FAC', label: 'Faculty', code: 'FAC' },
   ]
 
   const getDepartmentOptions = () => {

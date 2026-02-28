@@ -9,11 +9,52 @@ import { RecentActivities } from '@/components/dashboard/recent-activities'
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { Notifications } from '@/components/dashboard/notifications'
 import { NotificationCenter } from '@/components/notifications/notification-center'
+import { Badge } from '@/components/ui/badge'
 import { Users, BookOpen, Award, Calendar, TrendingUp, Clock, GraduationCap, FileText } from 'lucide-react'
 
+interface UserProfile {
+  id: string
+  role: 'student' | 'staff' | 'admin'
+  first_name?: string
+  last_name?: string
+  email?: string
+  student?: {
+    id: string
+    class_id: string
+  }
+  staff?: {
+    id: string
+    department?: string
+  }
+}
+
+interface StudentStats {
+  results: number
+  gpa: string
+  pendingAssignments: number
+  upcomingExams: number
+}
+
+interface StaffStats {
+  classes: number
+  subjects: number
+  pendingResults: number
+  totalStudents: number
+}
+
+interface AdminStats {
+  students: number
+  staff: number
+  pendingResults: number
+  classes: number
+  activeUsers: number
+}
+
+type StatsType = StudentStats | StaffStats | AdminStats | null
+
 export default function DashboardPage() {
-  const [user, setUser] = useState<any>(null)
-  const [stats, setStats] = useState<any>(null)
+  const [user, setUser] = useState<UserProfile | null>(null)
+  const [stats, setStats] = useState<StatsType>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -31,92 +72,94 @@ export default function DashboardPage() {
           .eq('id', authUser.id)
           .single()
         
-        setUser(profile)
+        if (profile) {
+          setUser(profile as UserProfile)
 
-        // Get role-specific stats
-        if (profile?.role === 'student') {
-          const { data: results } = await supabase
-            .from('results')
-            .select('*')
-            .eq('student_id', profile.student?.id)
-            .eq('status', 'published')
-          
-          const { data: assignments } = await supabase
-            .from('assignments')
-            .select('*')
-            .eq('class_id', profile.student?.class_id)
-            .gte('due_date', new Date().toISOString())
-          
-          const { data: cbtExams } = await supabase
-            .from('cbt_exams')
-            .select('*')
-            .eq('class_id', profile.student?.class_id)
-            .gte('scheduled_end', new Date().toISOString())
+          // Get role-specific stats
+          if (profile?.role === 'student') {
+            const { data: results } = await supabase
+              .from('results')
+              .select('*')
+              .eq('student_id', profile.student?.id)
+              .eq('status', 'published')
+            
+            const { data: assignments } = await supabase
+              .from('assignments')
+              .select('*')
+              .eq('class_id', profile.student?.class_id)
+              .gte('due_date', new Date().toISOString())
+            
+            const { data: cbtExams } = await supabase
+              .from('cbt_exams')
+              .select('*')
+              .eq('class_id', profile.student?.class_id)
+              .gte('scheduled_end', new Date().toISOString())
 
-          const calculateGPA = (results: any[]) => {
-            if (!results.length) return '0.00'
-            const total = results.reduce((sum, r) => sum + r.total_score, 0)
-            const percentage = total / (results.length * 100)
-            const gpa = (percentage * 4).toFixed(2)
-            return gpa
+            const calculateGPA = (results: any[]) => {
+              if (!results?.length) return '0.00'
+              const total = results.reduce((sum, r) => sum + (r.total_score || 0), 0)
+              const percentage = total / (results.length * 100)
+              const gpa = (percentage * 4).toFixed(2)
+              return gpa
+            }
+
+            setStats({
+              results: results?.length || 0,
+              gpa: calculateGPA(results || []),
+              pendingAssignments: assignments?.length || 0,
+              upcomingExams: cbtExams?.length || 0,
+            })
+          } else if (profile?.role === 'staff') {
+            const { data: classSubjects } = await supabase
+              .from('class_subjects')
+              .select('class_id, subject_id')
+              .eq('teacher_id', profile.staff?.id)
+            
+            const uniqueClasses = new Set(classSubjects?.map(c => c.class_id))
+            
+            const { count: pendingResults } = await supabase
+              .from('results')
+              .select('*', { count: 'exact', head: true })
+              .eq('status', 'draft')
+              .eq('entered_by', authUser.id)
+
+            setStats({
+              classes: uniqueClasses.size,
+              subjects: classSubjects?.length || 0,
+              pendingResults: pendingResults || 0,
+              totalStudents: 0, // Calculate from classes
+            })
+          } else if (profile?.role === 'admin') {
+            const { count: students } = await supabase
+              .from('students')
+              .select('*', { count: 'exact', head: true })
+            
+            const { count: staff } = await supabase
+              .from('staff')
+              .select('*', { count: 'exact', head: true })
+            
+            const { count: pendingResults } = await supabase
+              .from('results')
+              .select('*', { count: 'exact', head: true })
+              .eq('status', 'pending')
+            
+            const { count: classes } = await supabase
+              .from('classes')
+              .select('*', { count: 'exact', head: true })
+            
+            const { count: activeUsers } = await supabase
+              .from('users')
+              .select('*', { count: 'exact', head: true })
+              .eq('is_active', true)
+
+            setStats({
+              students: students || 0,
+              staff: staff || 0,
+              pendingResults: pendingResults || 0,
+              classes: classes || 0,
+              activeUsers: activeUsers || 0,
+            })
           }
-
-          setStats({
-            results: results?.length || 0,
-            gpa: calculateGPA(results || []),
-            pendingAssignments: assignments?.length || 0,
-            upcomingExams: cbtExams?.length || 0,
-          })
-        } else if (profile?.role === 'staff') {
-          const { data: classSubjects } = await supabase
-            .from('class_subjects')
-            .select('class_id, subject_id')
-            .eq('teacher_id', profile.staff?.id)
-          
-          const uniqueClasses = new Set(classSubjects?.map(c => c.class_id))
-          
-          const { data: pendingResults } = await supabase
-            .from('results')
-            .select('*', { count: 'exact', head: true })
-            .eq('status', 'draft')
-            .eq('entered_by', authUser.id)
-
-          setStats({
-            classes: uniqueClasses.size,
-            subjects: classSubjects?.length || 0,
-            pendingResults: pendingResults?.length || 0,
-            totalStudents: 0, // Calculate from classes
-          })
-        } else if (profile?.role === 'admin') {
-          const { count: students } = await supabase
-            .from('students')
-            .select('*', { count: 'exact', head: true })
-          
-          const { count: staff } = await supabase
-            .from('staff')
-            .select('*', { count: 'exact', head: true })
-          
-          const { count: pendingResults } = await supabase
-            .from('results')
-            .select('*', { count: 'exact', head: true })
-            .eq('status', 'pending')
-          
-          const { count: classes } = await supabase
-            .from('classes')
-            .select('*', { count: 'exact', head: true })
-          
-          const { count: activeUsers } = await supabase
-            .from('users')
-            .select('*', { count: 'exact', head: true })
-            .eq('is_active', true)
-
-          setStats({
-            students: students || 0,
-            staff: staff || 0,
-            pendingResults: pendingResults || 0,
-            classes: classes || 0,
-            activeUsers: activeUsers || 0,
-          })
         }
       }
       
@@ -134,6 +177,114 @@ export default function DashboardPage() {
     )
   }
 
+  const renderStats = () => {
+    if (!user?.role || !stats) return null
+
+    switch (user.role) {
+      case 'student':
+        const studentStats = stats as StudentStats
+        return (
+          <>
+            <StatsCard
+              title="Current GPA"
+              value={studentStats.gpa}
+              icon={TrendingUp}
+              description="Overall performance"
+              trend={parseFloat(studentStats.gpa) > 3.0 ? 'up' : 'neutral'}
+            />
+            <StatsCard
+              title="Published Results"
+              value={studentStats.results}
+              icon={Award}
+              description="Across all subjects"
+            />
+            <StatsCard
+              title="Pending Assignments"
+              value={studentStats.pendingAssignments}
+              icon={FileText}
+              description="Due this week"
+            />
+            <StatsCard
+              title="Upcoming CBT Exams"
+              value={studentStats.upcomingExams}
+              icon={GraduationCap}
+              description="Scheduled exams"
+            />
+          </>
+        )
+
+      case 'staff':
+        const staffStats = stats as StaffStats
+        return (
+          <>
+            <StatsCard
+              title="Classes"
+              value={staffStats.classes}
+              icon={Users}
+              description="Assigned classes"
+            />
+            <StatsCard
+              title="Subjects"
+              value={staffStats.subjects}
+              icon={BookOpen}
+              description="Teaching subjects"
+            />
+            <StatsCard
+              title="Pending Results"
+              value={staffStats.pendingResults}
+              icon={Award}
+              description="Awaiting entry"
+            />
+            <StatsCard
+              title="Total Students"
+              value={staffStats.totalStudents}
+              icon={Users}
+              description="Across all classes"
+            />
+          </>
+        )
+
+      case 'admin':
+        const adminStats = stats as AdminStats
+        return (
+          <>
+            <StatsCard
+              title="Total Students"
+              value={adminStats.students}
+              icon={Users}
+              description="Enrolled students"
+              trend="up"
+            />
+            <StatsCard
+              title="Staff Members"
+              value={adminStats.staff}
+              icon={Users}
+              description="Teaching & non-teaching"
+            />
+            <StatsCard
+              title="Active Classes"
+              value={adminStats.classes}
+              icon={BookOpen}
+              description="Current session"
+            />
+            <StatsCard
+              title="Pending Approvals"
+              value={adminStats.pendingResults}
+              icon={Clock}
+              description="Results awaiting approval"
+              trend={adminStats.pendingResults > 0 ? 'down' : 'neutral'}
+            />
+          </>
+        )
+
+      default:
+        return null
+    }
+  }
+
+  // Get user role as a non-undefined string or default to 'student'
+  const userRole = user?.role || 'student'
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -143,95 +294,7 @@ export default function DashboardPage() {
 
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {user?.role === 'student' && (
-          <>
-            <StatsCard
-              title="Current GPA"
-              value={stats?.gpa || '0.00'}
-              icon={TrendingUp}
-              description="Overall performance"
-              trend={parseFloat(stats?.gpa) > 3.0 ? 'up' : 'neutral'}
-            />
-            <StatsCard
-              title="Published Results"
-              value={stats?.results || 0}
-              icon={Award}
-              description="Across all subjects"
-            />
-            <StatsCard
-              title="Pending Assignments"
-              value={stats?.pendingAssignments || 0}
-              icon={FileText}
-              description="Due this week"
-            />
-            <StatsCard
-              title="Upcoming CBT Exams"
-              value={stats?.upcomingExams || 0}
-              icon={GraduationCap}
-              description="Scheduled exams"
-            />
-          </>
-        )}
-
-        {user?.role === 'staff' && (
-          <>
-            <StatsCard
-              title="Classes"
-              value={stats?.classes || 0}
-              icon={Users}
-              description="Assigned classes"
-            />
-            <StatsCard
-              title="Subjects"
-              value={stats?.subjects || 0}
-              icon={BookOpen}
-              description="Teaching subjects"
-            />
-            <StatsCard
-              title="Pending Results"
-              value={stats?.pendingResults || 0}
-              icon={Award}
-              description="Awaiting entry"
-            />
-            <StatsCard
-              title="Total Students"
-              value={stats?.totalStudents || 0}
-              icon={Users}
-              description="Across all classes"
-            />
-          </>
-        )}
-
-        {user?.role === 'admin' && (
-          <>
-            <StatsCard
-              title="Total Students"
-              value={stats?.students || 0}
-              icon={Users}
-              description="Enrolled students"
-              trend="up"
-            />
-            <StatsCard
-              title="Staff Members"
-              value={stats?.staff || 0}
-              icon={Users}
-              description="Teaching & non-teaching"
-            />
-            <StatsCard
-              title="Active Classes"
-              value={stats?.classes || 0}
-              icon={BookOpen}
-              description="Current session"
-            />
-            <StatsCard
-              title="Pending Approvals"
-              value={stats?.pendingResults || 0}
-              icon={Clock}
-              description="Results awaiting approval"
-              trend={stats?.pendingResults > 0 ? 'down' : 'neutral'}
-            />
-          </>
-        )}
+        {renderStats()}
       </div>
 
       {/* Main Content Grid */}
@@ -242,7 +305,8 @@ export default function DashboardPage() {
             <CardDescription>Your latest activities and updates</CardDescription>
           </CardHeader>
           <CardContent>
-            <RecentActivities userRole={user?.role} />
+            {/* FIXED: Use userRole prop (not role) */}
+            <RecentActivities userRole={userRole} />
           </CardContent>
         </Card>
 
@@ -252,7 +316,8 @@ export default function DashboardPage() {
             <CardDescription>Frequently used tasks</CardDescription>
           </CardHeader>
           <CardContent>
-            <QuickActions userRole={user?.role} />
+            {/* QuickActions uses role prop - this one is correct */}
+            <QuickActions role={userRole} />
           </CardContent>
         </Card>
       </div>
@@ -264,7 +329,8 @@ export default function DashboardPage() {
           <CardDescription>Stay updated with important announcements</CardDescription>
         </CardHeader>
         <CardContent>
-          <Notifications userRole={user?.role} />
+          {/* FIXED: Use userRole prop (not role) */}
+          <Notifications userRole={userRole} />
         </CardContent>
       </Card>
 
@@ -280,7 +346,7 @@ export default function DashboardPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Database Status</span>
-                  <Badge className="bg-success">Operational</Badge>
+                  <Badge variant="success">Operational</Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Storage Usage</span>
@@ -288,7 +354,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Active Users</span>
-                  <span className="text-sm font-medium">{stats?.activeUsers || 0}</span>
+                  <span className="text-sm font-medium">{stats && (stats as AdminStats).activeUsers || 0}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Last Backup</span>
@@ -329,7 +395,7 @@ export default function DashboardPage() {
                   </div>
                   <div>
                     <p className="text-sm font-medium">End of Term Exams</p>
-                    <p className="text-xs text-muted-foreground">June 20 - July 5, 2024</p>
+                    <p className="text-xs text-muted-foreground">June 20 - July 5, 2026</p>
                   </div>
                 </div>
               </div>
