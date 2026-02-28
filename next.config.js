@@ -26,7 +26,8 @@ const nextConfig = {
   experimental: {
     optimizeCss: true,
   },
-  // Remove this line: output: 'standalone',
+  // CRITICAL: Remove 'output: standalone' if present
+  // This is the main cause of the manifest error on Vercel
 }
 
 export default nextConfig

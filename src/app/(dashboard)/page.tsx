@@ -10,7 +10,8 @@ import { QuickActions } from '@/components/dashboard/quick-actions'
 import { Notifications } from '@/components/dashboard/notifications'
 import { NotificationCenter } from '@/components/notifications/notification-center'
 import { Badge } from '@/components/ui/badge'
-import { Users, BookOpen, Award, Calendar, TrendingUp, Clock, GraduationCap, FileText } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Users, BookOpen, Award, Calendar, TrendingUp, Clock, GraduationCap, FileText, AlertCircle } from 'lucide-react'
 
 interface UserProfile {
   id: string
@@ -52,50 +53,102 @@ interface AdminStats {
 
 type StatsType = StudentStats | StaffStats | AdminStats | null
 
+// Define types for database results
+interface Result {
+  total_score?: number
+}
+
+interface Assignment {
+  id: string
+  due_date: string
+}
+
+interface CBTExam {
+  id: string
+  scheduled_end: string
+}
+
+interface ClassSubject {
+  class_id: string
+  subject_id: string
+}
+
 export default function DashboardPage() {
   const [user, setUser] = useState<UserProfile | null>(null)
   const [stats, setStats] = useState<StatsType>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
-      const supabase = createClient()
-      
-      // Get current user
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      
-      if (authUser) {
+      try {
+        setLoading(true)
+        setError(null)
+        
+        const supabase = createClient()
+        
+        // Get current user
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+        
+        if (authError) {
+          throw new Error('Authentication error: ' + authError.message)
+        }
+        
+        if (!authUser) {
+          setLoading(false)
+          return
+        }
+
         // Get user profile with role
-        const { data: profile } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from('users')
           .select('*, student:students(*), staff:staff(*)')
           .eq('id', authUser.id)
           .single()
+        
+        if (profileError) {
+          throw new Error('Error fetching profile: ' + profileError.message)
+        }
         
         if (profile) {
           setUser(profile as UserProfile)
 
           // Get role-specific stats
           if (profile?.role === 'student') {
-            const { data: results } = await supabase
+            const { data: results, error: resultsError } = await supabase
               .from('results')
               .select('*')
               .eq('student_id', profile.student?.id)
               .eq('status', 'published')
+              .returns<Result[]>()
             
-            const { data: assignments } = await supabase
+            if (resultsError) {
+              console.error('Error fetching results:', resultsError)
+            }
+            
+            const { data: assignments, error: assignmentsError } = await supabase
               .from('assignments')
               .select('*')
               .eq('class_id', profile.student?.class_id)
               .gte('due_date', new Date().toISOString())
+              .returns<Assignment[]>()
             
-            const { data: cbtExams } = await supabase
+            if (assignmentsError) {
+              console.error('Error fetching assignments:', assignmentsError)
+            }
+            
+            const { data: cbtExams, error: cbtError } = await supabase
               .from('cbt_exams')
               .select('*')
               .eq('class_id', profile.student?.class_id)
               .gte('scheduled_end', new Date().toISOString())
+              .returns<CBTExam[]>()
+            
+            if (cbtError) {
+              console.error('Error fetching CBT exams:', cbtError)
+            }
 
-            const calculateGPA = (results: any[]) => {
+            const calculateGPA = (results: Result[]) => {
               if (!results?.length) return '0.00'
               const total = results.reduce((sum, r) => sum + (r.total_score || 0), 0)
               const percentage = total / (results.length * 100)
@@ -110,18 +163,27 @@ export default function DashboardPage() {
               upcomingExams: cbtExams?.length || 0,
             })
           } else if (profile?.role === 'staff') {
-            const { data: classSubjects } = await supabase
+            const { data: classSubjects, error: subjectsError } = await supabase
               .from('class_subjects')
               .select('class_id, subject_id')
               .eq('teacher_id', profile.staff?.id)
+              .returns<ClassSubject[]>()
+            
+            if (subjectsError) {
+              console.error('Error fetching class subjects:', subjectsError)
+            }
             
             const uniqueClasses = new Set(classSubjects?.map(c => c.class_id))
             
-            const { count: pendingResults } = await supabase
+            const { count: pendingResults, error: pendingError } = await supabase
               .from('results')
               .select('*', { count: 'exact', head: true })
               .eq('status', 'draft')
               .eq('entered_by', authUser.id)
+
+            if (pendingError) {
+              console.error('Error fetching pending results:', pendingError)
+            }
 
             setStats({
               classes: uniqueClasses.size,
@@ -130,27 +192,47 @@ export default function DashboardPage() {
               totalStudents: 0, // Calculate from classes
             })
           } else if (profile?.role === 'admin') {
-            const { count: students } = await supabase
+            const { count: students, error: studentsError } = await supabase
               .from('students')
               .select('*', { count: 'exact', head: true })
             
-            const { count: staff } = await supabase
+            if (studentsError) {
+              console.error('Error fetching students count:', studentsError)
+            }
+            
+            const { count: staff, error: staffError } = await supabase
               .from('staff')
               .select('*', { count: 'exact', head: true })
             
-            const { count: pendingResults } = await supabase
+            if (staffError) {
+              console.error('Error fetching staff count:', staffError)
+            }
+            
+            const { count: pendingResults, error: pendingError } = await supabase
               .from('results')
               .select('*', { count: 'exact', head: true })
               .eq('status', 'pending')
             
-            const { count: classes } = await supabase
+            if (pendingError) {
+              console.error('Error fetching pending results:', pendingError)
+            }
+            
+            const { count: classes, error: classesError } = await supabase
               .from('classes')
               .select('*', { count: 'exact', head: true })
             
-            const { count: activeUsers } = await supabase
+            if (classesError) {
+              console.error('Error fetching classes:', classesError)
+            }
+            
+            const { count: activeUsers, error: usersError } = await supabase
               .from('users')
               .select('*', { count: 'exact', head: true })
               .eq('is_active', true)
+
+            if (usersError) {
+              console.error('Error fetching active users:', usersError)
+            }
 
             setStats({
               students: students || 0,
@@ -161,9 +243,12 @@ export default function DashboardPage() {
             })
           }
         }
+      } catch (err) {
+        console.error('Error in fetchData:', err)
+        setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+      } finally {
+        setLoading(false)
       }
-      
-      setLoading(false)
     }
 
     fetchData()
@@ -173,6 +258,19 @@ export default function DashboardPage() {
     return (
       <div className="flex items-center justify-center h-[50vh]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="container max-w-4xl py-6">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Failed to load dashboard: {error}
+          </AlertDescription>
+        </Alert>
       </div>
     )
   }
@@ -305,7 +403,6 @@ export default function DashboardPage() {
             <CardDescription>Your latest activities and updates</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* FIXED: Use userRole prop (not role) */}
             <RecentActivities userRole={userRole} />
           </CardContent>
         </Card>
@@ -316,7 +413,6 @@ export default function DashboardPage() {
             <CardDescription>Frequently used tasks</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* QuickActions uses role prop - this one is correct */}
             <QuickActions role={userRole} />
           </CardContent>
         </Card>
@@ -329,7 +425,6 @@ export default function DashboardPage() {
           <CardDescription>Stay updated with important announcements</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* FIXED: Use userRole prop (not role) */}
           <Notifications userRole={userRole} />
         </CardContent>
       </Card>
@@ -354,7 +449,9 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Active Users</span>
-                  <span className="text-sm font-medium">{stats && (stats as AdminStats).activeUsers || 0}</span>
+                  <span className="text-sm font-medium">
+                    {stats && (stats as AdminStats).activeUsers || 0}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Last Backup</span>
