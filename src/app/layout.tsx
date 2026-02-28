@@ -1,25 +1,36 @@
 import type { Metadata } from 'next'
-import { Open_Sans, Playfair_Display, Dancing_Script } from 'next/font/google'
+import { Playfair_Display, Open_Sans, Dancing_Script } from 'next/font/google'
 import './globals.css'
 import { Header } from '@/components/layout/header'
 import { Footer } from '@/components/layout/footer'
-import { Providers } from '@/components/providers'
+import { AuthProvider } from '@/components/providers/auth-provider'
+import { QueryProvider } from '@/components/providers/query-provider'
+import { ToastProvider } from '@/components/providers/toast-provider'
 import { siteConfig } from '@/lib/constants/site'
 import { cn } from '@/lib/utils/cn'
 
-const openSans = Open_Sans({ 
+// Configure Playfair Display
+const playfair = Playfair_Display({
   subsets: ['latin'],
-  variable: '--font-sans',
+  display: 'swap',
+  variable: '--font-playfair',
+  weight: ['400', '500', '600', '700'],
 })
 
-const playfair = Playfair_Display({ 
+// Configure Open Sans
+const openSans = Open_Sans({
   subsets: ['latin'],
-  variable: '--font-serif',
+  display: 'swap',
+  variable: '--font-open-sans',
+  weight: ['300', '400', '500', '600', '700'],
 })
 
-const dancingScript = Dancing_Script({ 
+// Configure Dancing Script
+const dancingScript = Dancing_Script({
   subsets: ['latin'],
-  variable: '--font-script',
+  display: 'swap',
+  variable: '--font-dancing-script',
+  weight: ['400', '500', '600', '700'],
 })
 
 export const metadata: Metadata = {
@@ -28,6 +39,54 @@ export const metadata: Metadata = {
     template: `%s | ${siteConfig.name}`,
   },
   description: siteConfig.description,
+  keywords: ['school', 'education', 'portal', 'Lagos', 'Nigeria', 'academic management'],
+  authors: [{ name: 'Vincollins Schools' }],
+  creator: 'Vincollins Schools',
+  publisher: 'Vincollins Schools',
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'en_NG',
+    url: siteConfig.url,
+    title: siteConfig.name,
+    description: siteConfig.description,
+    siteName: siteConfig.name,
+    images: [
+      {
+        url: siteConfig.ogImage,
+        width: 1200,
+        height: 630,
+        alt: siteConfig.name,
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: siteConfig.name,
+    description: siteConfig.description,
+    images: [siteConfig.ogImage],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon-16x16.png',
+    apple: '/apple-touch-icon.png',
+  },
+  manifest: '/site.webmanifest',
 }
 
 export default function RootLayout({
@@ -36,13 +95,27 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${openSans.variable} ${playfair.variable} ${dancingScript.variable} scroll-smooth`}>
-      <body className={cn('flex min-h-screen flex-col')}>
-        <Providers>
-          <Header />
-          <main className="flex-1">{children}</main>
-          <Footer />
-        </Providers>
+    <html 
+      lang="en" 
+      className={cn(
+        playfair.variable,
+        openSans.variable,
+        dancingScript.variable
+      )}
+      suppressHydrationWarning
+    >
+      <body className={cn(
+        openSans.className,
+        'flex min-h-screen flex-col antialiased'
+      )}>
+        <AuthProvider>
+          <QueryProvider>
+            <Header />
+            <main className="flex-1">{children}</main>
+            <Footer />
+            <ToastProvider />
+          </QueryProvider>
+        </AuthProvider>
       </body>
     </html>
   )

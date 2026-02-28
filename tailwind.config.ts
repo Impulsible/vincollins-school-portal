@@ -1,8 +1,8 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import type { Config } from 'tailwindcss'
-import animate from 'tailwindcss-animate'
 
 const config: Config = {
-  darkMode: 'class',
+  darkMode: ['class'],
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -18,77 +18,86 @@ const config: Config = {
     },
     extend: {
       colors: {
-        border: 'rgba(44, 62, 80, 0.12)',
-        input: 'rgba(44, 62, 80, 0.12)',
-        ring: '#2D6CDF',
-        background: '#FDF6E3',
-        foreground: '#2C3E50',
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
         primary: {
-          DEFAULT: '#8B7355',
-          foreground: '#FFFFFF',
-          light: '#A48F76',
-          dark: '#6E5A43',
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
         },
         secondary: {
-          DEFAULT: '#E2725B',
-          foreground: '#FFFFFF',
-          light: '#E8917D',
-          dark: '#C45D48',
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
         },
         accent: {
-          DEFAULT: '#87A96B',
-          foreground: '#2C3E50',
-          light: '#9FBA88',
-          dark: '#6F8A56',
-        },
-        info: {
-          DEFAULT: '#2D6CDF',
-          foreground: '#FFFFFF',
-        },
-        header: {
-          DEFAULT: '#1E3A8A',
-          foreground: '#FFFFFF',
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
         },
         destructive: {
-          DEFAULT: '#C2413A',
-          foreground: '#FFFFFF',
-        },
-        success: {
-          DEFAULT: '#10B981',
-          foreground: '#FFFFFF',
-        },
-        warning: {
-          DEFAULT: '#F59E0B',
-          foreground: '#FFFFFF',
-        },
-        error: {
-          DEFAULT: '#EF4444',
-          foreground: '#FFFFFF',
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
         },
         muted: {
-          DEFAULT: '#F3F4F6',
-          foreground: '#6B7280',
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
         },
         card: {
-          DEFAULT: '#FFFFFF',
-          foreground: '#2C3E50',
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        success: {
+          DEFAULT: 'hsl(var(--success))',
+          foreground: 'hsl(var(--success-foreground))',
+        },
+        warning: {
+          DEFAULT: 'hsl(var(--warning))',
+          foreground: 'hsl(var(--warning-foreground))',
+        },
+        error: {
+          DEFAULT: 'hsl(var(--error))',
+          foreground: 'hsl(var(--error-foreground))',
+        },
+        info: {
+          DEFAULT: 'hsl(var(--info))',
+          foreground: 'hsl(var(--info-foreground))',
+        },
+        portal: {
+          blue: 'hsl(var(--portal-blue))',
+          deep: 'hsl(var(--portal-deep))',
+          red: 'hsl(var(--portal-red))',
+        },
+        header: {
+          DEFAULT: 'hsl(var(--header))',
+          foreground: 'hsl(var(--header-foreground))',
         },
       },
       fontFamily: {
-        sans: ['var(--font-open-sans)', 'system-ui', 'sans-serif'],
-        serif: ['var(--font-playfair)', 'Georgia', 'serif'],
-        script: ['var(--font-dancing-script)', 'cursive'],
+        sans: ['var(--font-open-sans)', 'Open Sans', 'system-ui', 'sans-serif'],
+        serif: ['var(--font-playfair)', 'Playfair Display', 'Georgia', 'serif'],
+        script: ['var(--font-dancing-script)', 'Dancing Script', 'cursive'],
+      },
+      fontSize: {
+        xs: ['0.75rem', { lineHeight: '1rem' }],
+        sm: ['0.875rem', { lineHeight: '1.25rem' }],
+        base: ['1rem', { lineHeight: '1.5rem' }],
+        lg: ['1.125rem', { lineHeight: '1.75rem' }],
+        xl: ['1.25rem', { lineHeight: '1.75rem' }],
+        '2xl': ['1.5rem', { lineHeight: '2rem' }],
+        '3xl': ['1.875rem', { lineHeight: '2.25rem' }],
+        '4xl': ['2.25rem', { lineHeight: '2.5rem' }],
+        '5xl': ['3rem', { lineHeight: '1' }],
+        '6xl': ['3.75rem', { lineHeight: '1' }],
       },
       borderRadius: {
-        lg: '0.5rem',
-        md: 'calc(0.5rem - 2px)',
-        sm: 'calc(0.5rem - 4px)',
-      },
-      boxShadow: {
-        sm: '0 2px 8px rgba(139, 115, 85, 0.08)',
-        DEFAULT: '0 4px 12px rgba(139, 115, 85, 0.1)',
-        md: '0 6px 16px rgba(139, 115, 85, 0.12)',
-        lg: '0 8px 24px rgba(139, 115, 85, 0.15)',
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
       keyframes: {
         'accordion-down': {
@@ -101,17 +110,32 @@ const config: Config = {
         },
         float: {
           '0%, 100%': { transform: 'translateY(0)' },
-          '50%': { transform: 'translateY(-10px)' },
+          '50%': { transform: 'translateY(-8px)' },
+        },
+        'fade-in': {
+          from: { opacity: '0', transform: 'translateY(10px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        shimmer: {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
         },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
-        'float': 'float 3s ease-in-out infinite',
+        'float': 'float 4s ease-in-out infinite',
+        'fade-in': 'fade-in 0.5s ease-out forwards',
+        'shimmer': 'shimmer 1.5s infinite',
+      },
+      boxShadow: {
+        'soft': '0 4px 12px rgba(139, 115, 85, 0.1)',
+        'medium': '0 6px 16px rgba(139, 115, 85, 0.15)',
+        'large': '0 8px 24px rgba(139, 115, 85, 0.2)',
       },
     },
   },
-  plugins: [animate],
+  plugins: [require('tailwindcss-animate')],
 }
 
 export default config

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/set-state-in-effect */
 // src/hooks/use-auth.ts
 import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
